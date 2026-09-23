@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from "react";
 import schoolLogo from "./assets/logo.jpeg";
+
+
+import slide1 from "./assets/1.jpeg";
+import slide2 from "./assets/2.jpeg";
+import slide3 from "./assets/3.jpeg";
+import slide4 from "./assets/4.jpeg";
+import slide5 from "./assets/5.jpeg";
+import slide6 from "./assets/6.jpeg";
+import slide7 from "./assets/7.jpeg";
+import slide8 from "./assets/8.jpeg";
+import slide9 from "./assets/9.jpeg";
+import slide10 from "./assets/10.jpeg";
+import slide11 from "./assets/11.jpeg";
+import founderPhoto from "./assets/PT.jpeg";
+
 import { 
   School, 
   Menu, 
@@ -49,10 +64,17 @@ const INITIAL_EVENTS = [
 ];
 
 const SLIDES = [
-  { id: 1, src: "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1200&q=80", alt: "Classroom" },
-  { id: 2, src: "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1200&q=80", alt: "Sports Day" },
-  { id: 3, src: "https://images.unsplash.com/photo-1588072432836-e10032774350?auto=format&fit=crop&w=1200&q=80", alt: "Science Lab" },
-  { id: 4, src: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1200&q=80", alt: "Arts & Crafts" }
+  { id: 1, src: slide1, alt: "O'lak Triumph School Activity 1" },
+  { id: 2, src: slide2, alt: "O'lak Triumph School Activity 2" },
+  { id: 3, src: slide3, alt: "O'lak Triumph School Activity 3" },
+  { id: 4, src: slide4, alt: "O'lak Triumph School Activity 4" },
+  { id: 5, src: slide5, alt: "O'lak Triumph School Activity 5" },
+  { id: 6, src: slide6, alt: "O'lak Triumph School Activity 6" },
+  { id: 7, src: slide7, alt: "O'lak Triumph School Activity 7" },
+  { id: 8, src: slide8, alt: "O'lak Triumph School Activity 8" },
+  { id: 9, src: slide9, alt: "O'lak Triumph School Activity 9" },
+  { id: 10, src: slide10, alt: "O'lak Triumph School Activity 10" },
+  { id: 11, src: slide11, alt: "O'lak Triumph School Activity 11" }
 ];
 
 export default function App() {
@@ -94,7 +116,6 @@ export default function App() {
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
-    // Simple demo credentials check (Change these to your desired login info)
     if (adminUser === "admin" && adminPass === "olaktriumph2026") {
       setIsAdminLoggedIn(true);
       setLoginError("");
@@ -113,7 +134,7 @@ export default function App() {
 
   const handleDeleteEvent = (id) => {
     if (!isAdminLoggedIn) {
-      setIsModalOpen(true); // Trigger login modal if not logged in
+      setIsModalOpen(true);
       return;
     }
     setEvents(events.filter((item) => item.id !== id));
@@ -161,7 +182,6 @@ export default function App() {
       <main>
         {/* --- Hero Section with Automatic Slideshow --- */}
         <section className="hero hero-slider-container">
-          {/* Background Slideshow */}
           <div className="hero-slides-wrapper">
             {SLIDES.map((slide, index) => (
               <div
@@ -174,7 +194,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Foreground Hero Content */}
           <div className="container hero-content">
             <h1 className="hero-title">
               <span>Welcome to O'lak Triumph School</span>
@@ -203,7 +222,7 @@ export default function App() {
         <section className="founder-section" id="founder">
           <div className="container founder-grid">
             <div className="founder-image-wrapper">
-              <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80" alt="Founder" />
+              <img src={founderPhoto} alt="Founder of O'lak Triumph School" />
             </div>
             <div className="founder-content">
               <span className="section-badge" style={{ fontFamily: "'Fredoka', cursive, sans-serif" }}>
@@ -337,7 +356,6 @@ export default function App() {
           <div className="modal-content">
             
             {!isAdminLoggedIn ? (
-              // --- Admin Login Form View ---
               <>
                 <div className="modal-header">
                   <h3>Admin Authentication Required</h3>
@@ -359,7 +377,6 @@ export default function App() {
                 </form>
               </>
             ) : (
-              // --- Add Event Form View (Unlocked) ---
               <>
                 <div className="modal-header">
                   <h3>Add New School Event</h3>
