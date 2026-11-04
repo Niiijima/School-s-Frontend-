@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import schoolLogo from "./assets/logo.jpeg";
 
-
 import slide1 from "./assets/1.jpeg";
 import slide2 from "./assets/2.jpeg";
 import slide3 from "./assets/3.jpeg";
@@ -10,13 +9,11 @@ import slide5 from "./assets/5.jpeg";
 import slide6 from "./assets/6.jpeg";
 import slide7 from "./assets/7.jpeg";
 import slide8 from "./assets/8.jpeg";
-import slide9 from "./assets/9.jpeg";
 import slide10 from "./assets/10.jpeg";
 import slide11 from "./assets/11.jpeg";
 import founderPhoto from "./assets/PT.jpeg";
 
 import { 
-  School, 
   Menu, 
   X, 
   BookOpen, 
@@ -24,7 +21,6 @@ import {
   Users, 
   MapPin, 
   Clock, 
-  Plus, 
   Trash2,
   Phone,
   Mail,
@@ -63,6 +59,7 @@ const INITIAL_EVENTS = [
   }
 ];
 
+// Removed founderPhoto / PT.jpeg from the slideshow list
 const SLIDES = [
   { id: 1, src: slide1, alt: "O'lak Triumph School Activity 1" },
   { id: 2, src: slide2, alt: "O'lak Triumph School Activity 2" },
@@ -72,7 +69,6 @@ const SLIDES = [
   { id: 6, src: slide6, alt: "O'lak Triumph School Activity 6" },
   { id: 7, src: slide7, alt: "O'lak Triumph School Activity 7" },
   { id: 8, src: slide8, alt: "O'lak Triumph School Activity 8" },
-  { id: 9, src: slide9, alt: "O'lak Triumph School Activity 9" },
   { id: 10, src: slide10, alt: "O'lak Triumph School Activity 10" },
   { id: 11, src: slide11, alt: "O'lak Triumph School Activity 11" }
 ];
@@ -80,10 +76,14 @@ const SLIDES = [
 export default function App() {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [events, setEvents] = useState(INITIAL_EVENTS);
+  
+  const [events, setEvents] = useState(() => {
+    const saved = localStorage.getItem("olak_events");
+    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
+  });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Admin Authentication States
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
@@ -98,7 +98,6 @@ export default function App() {
     description: ""
   });
 
-  // Inject Google Fonts directly into document head
   useEffect(() => {
     const fontLink = document.createElement("link");
     fontLink.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Fredoka:wght@500;600;700&family=Quicksand:wght@600;700&display=swap";
@@ -106,7 +105,10 @@ export default function App() {
     document.head.appendChild(fontLink);
   }, []);
 
-  // Automatic slide rotation every 5 seconds (5000 ms)
+  useEffect(() => {
+    localStorage.setItem("olak_events", JSON.stringify(events));
+  }, [events]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
@@ -119,9 +121,15 @@ export default function App() {
     if (adminUser === "admin" && adminPass === "olaktriumph2026") {
       setIsAdminLoggedIn(true);
       setLoginError("");
+      setAdminUser("");
+      setAdminPass("");
     } else {
       setLoginError("Invalid username or password.");
     }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminLoggedIn(false);
   };
 
   const handleAddEvent = (e) => {
@@ -142,7 +150,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* --- Top Utility Bar --- */}
       <div className="top-bar">
         <div className="container top-bar-inner">
           <div className="top-info">
@@ -152,13 +159,27 @@ export default function App() {
           </div>
           <div className="top-actions">
             <a href="#student-portal" className="portal-link"><UserCheck size={14} /> Student Portal</a>
-            <a href="#staff-portal" className="portal-link">Admin Portal</a>
-            {isAdminLoggedIn && <span className="admin-badge" style={{color: "var(--secondary)", fontWeight: "bold", marginLeft: "10px"}}>🔒 Admin Active</span>}
+            {isAdminLoggedIn ? (
+              <button 
+                onClick={handleAdminLogout} 
+                className="portal-link" 
+                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--secondary)", fontWeight: "bold" }}
+              >
+                 Admin Active (Logout)
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsModalOpen(true)} 
+                className="portal-link"
+                style={{ background: "transparent", border: "none", cursor: "pointer" }}
+              >
+                Admin Login
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* --- Main Site Header --- */}
       <header className="site-header">
         <div className="container header-inner">
           <a href="#" className="logo">
@@ -173,14 +194,13 @@ export default function App() {
             <a href="#contact" onClick={() => setIsNavOpen(false)}>Contact Us</a>
           </nav>
 
-          <button className="menu-toggle" onClick={() => setIsNavOpen(!isNavOpen)}>
+          <button className="menu-toggle" onClick={() => setIsNavOpen(!isNavOpen)} aria-label="Toggle Navigation Menu">
             {isNavOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
       </header>
 
       <main>
-        {/* --- Hero Section with Automatic Slideshow --- */}
         <section className="hero hero-slider-container">
           <div className="hero-slides-wrapper">
             {SLIDES.map((slide, index) => (
@@ -218,7 +238,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* --- Founder Section --- */}
+        {/* Founder section keeps founderPhoto (PT.jpeg) exclusively */}
         <section className="founder-section" id="founder">
           <div className="container founder-grid">
             <div className="founder-image-wrapper">
@@ -245,7 +265,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* --- Highlights Section --- */}
         <section className="highlights">
           <div className="container">
             <h2 className="section-title">Why Choose O'lak Triumph School?</h2>
@@ -277,7 +296,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* --- Upcoming Events Section --- */}
         <section className="upcoming-events" id="events">
           <div className="container">
             <div className="events-header">
@@ -286,7 +304,7 @@ export default function App() {
                 <p>Stay updated with our key activities and schedules.</p>
               </div>
               <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-                <Lock size={16} style={{ marginRight: "6px" }} /> Add Event (Admin)
+                <Lock size={16} style={{ marginRight: "6px" }} /> {isAdminLoggedIn ? "Add Event" : "Add Event (Admin)"}
               </button>
             </div>
 
@@ -350,11 +368,9 @@ export default function App() {
         </div>
       </footer>
 
-      {/* --- Modal for Login or Add Event Form --- */}
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
-            
             {!isAdminLoggedIn ? (
               <>
                 <div className="modal-header">
@@ -406,7 +422,6 @@ export default function App() {
                 </form>
               </>
             )}
-
           </div>
         </div>
       )}
