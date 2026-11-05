@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 
 import schoolLogo from "./assets/logo.jpeg";
@@ -14,6 +13,7 @@ import slide10 from "./assets/10.jpeg";
 import slide11 from "./assets/11.jpeg";
 import founderPhoto from "./assets/PT.jpeg";
 import AdminDashboard from "./AdminDashboard";
+import StudentDashboard from "./pages/StudentDashboard";
 
 import {
   Menu,
@@ -97,15 +97,12 @@ function LoginPage({ type }) {
     e.preventDefault();
 
     if (isAdmin) {
-      // Frontend-only navigation for now.
-      // This does not authenticate the administrator.
       window.location.href = "/admin/dashboard";
       return;
     }
 
-    setMessage(
-      "Your student login interface is ready. Authentication will be connected later."
-    );
+    // Frontend demo navigation — no authentication required.
+    window.location.href = "/student/dashboard";
   };
 
   const pageStyles = {
@@ -203,7 +200,6 @@ function LoginPage({ type }) {
         }}
       >
         <div style={cardStyles}>
-          {/* School logo */}
           <div
             style={{
               width: "90px",
@@ -1120,7 +1116,7 @@ function HomePage() {
   );
 }
 
-// URL handling: homepage, login pages and admin dashboard
+// Manual URL routing
 export default function App() {
   const currentPath =
     window.location.pathname.replace(/\/+$/, "") || "/";
@@ -1131,6 +1127,13 @@ export default function App() {
 
   if (currentPath === "/admin/login") {
     return <LoginPage type="admin" />;
+  }
+
+  if (
+    currentPath === "/student/dashboard" ||
+    currentPath.startsWith("/student/results/")
+  ) {
+    return <StudentDashboard />;
   }
 
   if (currentPath === "/student/login") {

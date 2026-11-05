@@ -244,7 +244,14 @@ function getNextClass(className) {
 }
 
 // Matches the section-based grading in your backend gradeCalculator.js.
-function calculateGrade(section, test1 = 0, test2 = 0, test3 = 0, assignment = 0, exam = 0) {
+function calculateGrade(
+  section,
+  test1 = 0,
+  test2 = 0,
+  test3 = 0,
+  assignment = 0,
+  exam = 0
+) {
   const totalScore =
     Number(test1) +
     Number(test2) +
@@ -309,7 +316,7 @@ function calculateGrade(section, test1 = 0, test2 = 0, test3 = 0, assignment = 0
   return { totalScore, grade: "F", remark: "Fail" };
 }
 
-// Matches the backend's automatic year tutor comment.
+// Automatic year tutor comment.
 function getAutomaticYearTutorComment(averageScore) {
   if (averageScore >= 75) {
     return "An exceptionally brilliant performance. Keep maintaining this golden standard.";
@@ -330,7 +337,7 @@ function getAutomaticYearTutorComment(averageScore) {
   return "An unsatisfactory performance. Intensive remedial study and closer supervision are urgently required.";
 }
 
-// Matches the backend's automatic principal/admin comment.
+// Automatic principal/admin comment.
 function getAutomaticAdminComment(averageScore) {
   if (averageScore >= 75) {
     return "Outstanding academic excellence. A proud reflection of hard work. Keep it up!";
@@ -753,7 +760,9 @@ function AdminDashboard() {
       (selectedSubject.department || "") !==
         (selectedStudent.department || "")
     ) {
-      showNotice("The selected subject does not belong to this student's class and department.");
+      showNotice(
+        "The selected subject does not belong to this student's class and department."
+      );
       return;
     }
 
@@ -1638,9 +1647,6 @@ function AdminDashboard() {
                         <div className="admin-result-average">
                           <span>Terminal average</span>
                           <strong>{result.average.toFixed(2)}%</strong>
-                          <span>
-                            {result.total} / {result.subjectCount * 100}
-                          </span>
                         </div>
                       </div>
 
@@ -1690,54 +1696,44 @@ function AdminDashboard() {
                         </table>
                       </div>
 
-                      <div className="admin-result-comments">
-                        <div>
+                      {/* AUTOMATIC COMMENTS AND SUBJECT COUNT */}
+                      <div
+                        className="admin-result-comments"
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "14px",
+                          width: "100%",
+                        }}
+                      >
+                        <div style={{ width: "100%" }}>
+                          <div className="admin-result-comment-heading">
+                            <School size={18} />
+                            <strong>Admin's Comment</strong>
+                          </div>
+                          <p>{result.adminComment}</p>
+                        </div>
+
+                        <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
                             <GraduationCap size={18} />
-                            <strong>Class Teacher / Year Tutor's Comment</strong>
+                            <strong>Year Tutor's Comment</strong>
                           </div>
                           <p>{result.yearTutorComment}</p>
                         </div>
 
-                        <div>
+                        <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
-                            <School size={18} />
-                            <strong>Principal / Admin's Comment</strong>
+                            <FileText size={18} />
+                            <strong>Subjects Recorded</strong>
                           </div>
-                          <p>{result.adminComment}</p>
+                          <p>{result.subjectCount}</p>
                         </div>
-                      </div>
-
-                      <div className="admin-result-footer">
-                        <span>
-                          Subjects recorded: {result.subjectCount}
-                        </span>
-                        <span>
-                          Overall total: {result.total} marks
-                        </span>
-                        {result.scores.some(
-                          (score) => score.noInClass != null
-                        ) && (
-                          <span>
-                            Manual position:{" "}
-                            {result.scores.find(
-                              (score) => score.noInClass != null
-                            ).noInClass}
-                          </span>
-                        )}
                       </div>
                     </article>
                   ))}
                 </div>
               )}
-
-              <p className="admin-footnote">
-                <InfoIcon />
-                The terminal average is calculated from the subjects with
-                recorded scores for this student and term. Both comments use
-                that average and follow your supplied backend comment rules.
-                Results in this frontend preview are not saved to the backend.
-              </p>
             </section>
           )}
 
