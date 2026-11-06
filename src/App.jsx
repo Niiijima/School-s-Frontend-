@@ -12,8 +12,11 @@ import slide8 from "./assets/8.jpeg";
 import slide10 from "./assets/10.jpeg";
 import slide11 from "./assets/11.jpeg";
 import founderPhoto from "./assets/PT.jpeg";
+
 import AdminDashboard from "./AdminDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
+import AdminLogin from "./pages/AdminLogin";
+import StudentLogin from "./pages/studentlogin";
 
 import {
   Menu,
@@ -27,10 +30,7 @@ import {
   Phone,
   Mail,
   UserCheck,
-  Lock,
-  ArrowLeft,
-  Eye,
-  EyeOff
+  Lock
 } from "lucide-react";
 
 import "./App.css";
@@ -81,347 +81,7 @@ const SLIDES = [
   { id: 11, src: slide11, alt: "O'lak Triumph School Activity 11" }
 ];
 
-// Shared login page component
-function LoginPage({ type }) {
-  const isAdmin = type === "admin";
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const [formData, setFormData] = useState({
-    username: "",
-    password: ""
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (isAdmin) {
-      window.location.href = "/admin/dashboard";
-      return;
-    }
-
-    // Frontend demo navigation — no authentication required.
-    window.location.href = "/student/dashboard";
-  };
-
-  const pageStyles = {
-    minHeight: "100vh",
-    background: "#f5f7fb",
-    display: "flex",
-    flexDirection: "column",
-    fontFamily: "'Quicksand', sans-serif"
-  };
-
-  const cardStyles = {
-    width: "100%",
-    maxWidth: "460px",
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "38px",
-    boxShadow: "0 15px 45px rgba(11, 37, 69, 0.10)",
-    border: "1px solid #e2e8f0"
-  };
-
-  const inputStyles = {
-    width: "100%",
-    padding: "14px 15px",
-    border: "1px solid #dbe2ea",
-    borderRadius: "9px",
-    fontSize: "15px",
-    outline: "none",
-    boxSizing: "border-box",
-    fontFamily: "inherit",
-    background: "#fff",
-    color: "#0f172a"
-  };
-
-  return (
-    <div style={pageStyles}>
-      <header
-        style={{
-          background: "#0b2545",
-          padding: "16px 5%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "15px"
-        }}
-      >
-        <a
-          href="/"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            color: "#fff",
-            textDecoration: "none",
-            fontWeight: "700",
-            fontSize: "18px"
-          }}
-        >
-          <img
-            src={schoolLogo}
-            alt="O'lak Triumph School"
-            style={{
-              width: "45px",
-              height: "45px",
-              objectFit: "contain",
-              borderRadius: "50%"
-            }}
-          />
-          <span>O'lak Triumph School</span>
-        </a>
-
-        <a
-          href="/"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "7px",
-            color: "#fff",
-            textDecoration: "none",
-            fontSize: "14px",
-            fontWeight: "600"
-          }}
-        >
-          <ArrowLeft size={17} />
-          Back to Home
-        </a>
-      </header>
-
-      <main
-        style={{
-          flex: 1,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: "45px 20px"
-        }}
-      >
-        <div style={cardStyles}>
-          <div
-            style={{
-              width: "90px",
-              height: "90px",
-              margin: "0 auto 20px",
-              borderRadius: "50%",
-              overflow: "hidden",
-              background: "#fff",
-              border: "3px solid #d4af37",
-              boxShadow: "0 5px 18px rgba(11, 37, 69, 0.12)"
-            }}
-          >
-            <img
-              src={schoolLogo}
-              alt="O'lak Triumph School Logo"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain"
-              }}
-            />
-          </div>
-
-          <div style={{ textAlign: "center", marginBottom: "30px" }}>
-            <span
-              style={{
-                color: "#b89528",
-                fontSize: "12px",
-                fontWeight: "800",
-                letterSpacing: "2px"
-              }}
-            >
-              O'LAK TRIUMPH SCHOOL
-            </span>
-
-            <h1
-              style={{
-                color: "#0b2545",
-                fontSize: "28px",
-                margin: "10px 0",
-                fontWeight: "800"
-              }}
-            >
-              {isAdmin ? "Admin Login" : "Student Login"}
-            </h1>
-
-            <p style={{ color: "#64748b", fontSize: "14px", margin: 0 }}>
-              {isAdmin
-                ? "Welcome back. Sign in to access the administration portal."
-                : "Welcome! Sign in to access your student portal."}
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <label
-              htmlFor="login-username"
-              style={{
-                display: "block",
-                color: "#0b2545",
-                fontWeight: "700",
-                fontSize: "14px",
-                marginBottom: "9px"
-              }}
-            >
-              {isAdmin ? "Admin Username" : "Student ID / Username"}
-            </label>
-
-            <input
-              id="login-username"
-              type="text"
-              required
-              autoComplete="username"
-              placeholder={
-                isAdmin ? "Enter your admin username" : "Enter your student ID"
-              }
-              value={formData.username}
-              onChange={(e) =>
-                setFormData({ ...formData, username: e.target.value })
-              }
-              style={{ ...inputStyles, marginBottom: "22px" }}
-            />
-
-            <label
-              htmlFor="login-password"
-              style={{
-                display: "block",
-                color: "#0b2545",
-                fontWeight: "700",
-                fontSize: "14px",
-                marginBottom: "9px"
-              }}
-            >
-              Password
-            </label>
-
-            <div style={{ position: "relative", marginBottom: "20px" }}>
-              <input
-                id="login-password"
-                type={showPassword ? "text" : "password"}
-                required
-                autoComplete="current-password"
-                placeholder="Enter your password"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                style={{ ...inputStyles, paddingRight: "48px" }}
-              />
-
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                style={{
-                  position: "absolute",
-                  right: "13px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  background: "none",
-                  border: "none",
-                  color: "#64748b",
-                  cursor: "pointer",
-                  display: "flex"
-                }}
-              >
-                {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
-              </button>
-            </div>
-
-            {message && (
-              <p
-                role="status"
-                style={{
-                  color: "#0b2545",
-                  background: "#f1f5f9",
-                  borderRadius: "8px",
-                  padding: "12px",
-                  fontSize: "13px",
-                  lineHeight: "1.5"
-                }}
-              >
-                {message}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              style={{
-                width: "100%",
-                padding: "15px",
-                background: "#0b2545",
-                color: "#fff",
-                border: "none",
-                borderRadius: "9px",
-                fontSize: "15px",
-                fontWeight: "800",
-                cursor: "pointer",
-                marginTop: "10px",
-                fontFamily: "inherit"
-              }}
-            >
-              Sign In
-            </button>
-          </form>
-
-          <div
-            style={{
-              borderTop: "1px solid #e2e8f0",
-              marginTop: "25px",
-              paddingTop: "20px",
-              textAlign: "center"
-            }}
-          >
-            <p style={{ color: "#64748b", fontSize: "13px", margin: 0 }}>
-              {isAdmin
-                ? "Are you a student?"
-                : "Are you an administrator?"}
-              {" "}
-              <a
-                href={isAdmin ? "/student/login" : "/admin/login"}
-                style={{
-                  color: "#b89528",
-                  fontWeight: "800",
-                  textDecoration: "none"
-                }}
-              >
-                {isAdmin ? "Student Login" : "Admin Login"}
-              </a>
-            </p>
-
-            <a
-              href="/"
-              style={{
-                display: "inline-block",
-                marginTop: "20px",
-                color: "#64748b",
-                fontSize: "13px",
-                textDecoration: "none"
-              }}
-            >
-              Return to school homepage
-            </a>
-          </div>
-        </div>
-      </main>
-
-      <footer
-        style={{
-          background: "#0b2545",
-          color: "#fff",
-          textAlign: "center",
-          padding: "18px",
-          fontSize: "12px"
-        }}
-      >
-        © 2003–2026 O'lak Triumph School. All rights reserved.
-      </footer>
-    </div>
-  );
-}
-
-// Original homepage
+// ====================== HOMEPAGE ======================
 function HomePage() {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -433,10 +93,8 @@ function HomePage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Real admin check (JWT from /admin/login)
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminUser, setAdminUser] = useState("");
-  const [adminPass, setAdminPass] = useState("");
-  const [loginError, setLoginError] = useState("");
 
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -446,6 +104,12 @@ function HomePage() {
     time: "",
     description: ""
   });
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+    setIsAdminLoggedIn(Boolean(token && role === "admin"));
+  }, []);
 
   useEffect(() => {
     const fontLink = document.createElement("link");
@@ -471,20 +135,10 @@ function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleAdminLogin = (e) => {
-    e.preventDefault();
-
-    if (adminUser === "admin" && adminPass === "olaktriumph2026") {
-      setIsAdminLoggedIn(true);
-      setLoginError("");
-      setAdminUser("");
-      setAdminPass("");
-    } else {
-      setLoginError("Invalid username or password.");
-    }
-  };
-
   const handleAdminLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("role");
+    localStorage.removeItem("user");
     setIsAdminLoggedIn(false);
   };
 
@@ -509,11 +163,19 @@ function HomePage() {
 
   const handleDeleteEvent = (id) => {
     if (!isAdminLoggedIn) {
-      setIsModalOpen(true);
+      window.location.href = "/admin/login";
       return;
     }
-
     setEvents(events.filter((item) => item.id !== id));
+  };
+
+  const openAddEvent = () => {
+    if (!isAdminLoggedIn) {
+      // No more fake credentials — send them to real admin login
+      window.location.href = "/admin/login";
+      return;
+    }
+    setIsModalOpen(true);
   };
 
   return (
@@ -590,11 +252,7 @@ function HomePage() {
           </a>
 
           <nav className={`main-nav ${isNavOpen ? "open" : ""}`}>
-            <a
-              href="/"
-              onClick={() => setIsNavOpen(false)}
-              className="active"
-            >
+            <a href="/" onClick={() => setIsNavOpen(false)} className="active">
               Home
             </a>
 
@@ -642,9 +300,7 @@ function HomePage() {
               <span>Welcome to O'lak Triumph School</span>
             </h1>
 
-            <p className="hero-motto">
-              Committed to Excellence in Education
-            </p>
+            <p className="hero-motto">Committed to Excellence in Education</p>
 
             <p className="hero-desc">
               O'lak Triumph School is a vibrant learning community dedicated
@@ -793,15 +449,10 @@ function HomePage() {
             <div className="events-header">
               <div>
                 <h2 className="section-title">Upcoming School Events</h2>
-                <p>
-                  Stay updated with our key activities and schedules.
-                </p>
+                <p>Stay updated with our key activities and schedules.</p>
               </div>
 
-              <button
-                className="btn btn-primary"
-                onClick={() => setIsModalOpen(true)}
-              >
+              <button className="btn btn-primary" onClick={openAddEvent}>
                 <Lock size={16} style={{ marginRight: "6px" }} />
                 {isAdminLoggedIn ? "Add Event" : "Add Event (Admin)"}
               </button>
@@ -894,221 +545,136 @@ function HomePage() {
         </div>
       </footer>
 
-      {isModalOpen && (
+      {/* Add Event Modal — only shown when admin is already logged in */}
+      {isModalOpen && isAdminLoggedIn && (
         <div className="modal-overlay">
           <div className="modal-content">
-            {!isAdminLoggedIn ? (
-              <>
-                <div className="modal-header">
-                  <h3>Admin Authentication Required</h3>
+            <div className="modal-header">
+              <h3>Add New School Event</h3>
 
-                  <button
-                    className="btn-close"
-                    onClick={() => setIsModalOpen(false)}
+              <button
+                className="btn-close"
+                onClick={() => setIsModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddEvent} className="modal-form">
+              <label>
+                Title:
+                <input
+                  type="text"
+                  required
+                  value={newEvent.title}
+                  onChange={(e) =>
+                    setNewEvent({
+                      ...newEvent,
+                      title: e.target.value
+                    })
+                  }
+                />
+              </label>
+
+              <div className="form-row">
+                <label>
+                  Day:
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 15"
+                    value={newEvent.day}
+                    onChange={(e) =>
+                      setNewEvent({
+                        ...newEvent,
+                        day: e.target.value
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Month:
+                  <select
+                    value={newEvent.month}
+                    onChange={(e) =>
+                      setNewEvent({
+                        ...newEvent,
+                        month: e.target.value
+                      })
+                    }
                   >
-                    <X size={20} />
-                  </button>
-                </div>
+                    {[
+                      "JAN", "FEB", "MAR", "APR",
+                      "MAY", "JUN", "JUL", "AUG",
+                      "SEP", "OCT", "NOV", "DEC"
+                    ].map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
-                <form onSubmit={handleAdminLogin} className="modal-form">
-                  <p
-                    style={{
-                      fontSize: "0.9rem",
-                      color: "#64748b",
-                      marginBottom: "10px"
-                    }}
-                  >
-                    Please sign in with administrator credentials to add or
-                    manage events. <br />
+              <div className="form-row">
+                <label>
+                  Location:
+                  <input
+                    type="text"
+                    value={newEvent.location}
+                    onChange={(e) =>
+                      setNewEvent({
+                        ...newEvent,
+                        location: e.target.value
+                      })
+                    }
+                  />
+                </label>
 
-                    <small style={{ fontStyle: "italic" }}>
-                      (Demo credentials — User: <code>admin</code> | Pass:{" "}
-                      <code>olaktriumph2026</code>)
-                    </small>
-                  </p>
+                <label>
+                  Time:
+                  <input
+                    type="text"
+                    value={newEvent.time}
+                    onChange={(e) =>
+                      setNewEvent({
+                        ...newEvent,
+                        time: e.target.value
+                      })
+                    }
+                  />
+                </label>
+              </div>
 
-                  {loginError && (
-                    <p
-                      style={{
-                        color: "#ef4444",
-                        fontSize: "0.85rem",
-                        fontWeight: "600"
-                      }}
-                    >
-                      {loginError}
-                    </p>
-                  )}
+              <label>
+                Description:
+                <textarea
+                  rows="3"
+                  value={newEvent.description}
+                  onChange={(e) =>
+                    setNewEvent({
+                      ...newEvent,
+                      description: e.target.value
+                    })
+                  }
+                />
+              </label>
 
-                  <label>
-                    Username:
-                    <input
-                      type="text"
-                      required
-                      value={adminUser}
-                      onChange={(e) => setAdminUser(e.target.value)}
-                      placeholder="Enter admin username"
-                    />
-                  </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  Cancel
+                </button>
 
-                  <label>
-                    Password:
-                    <input
-                      type="password"
-                      required
-                      value={adminPass}
-                      onChange={(e) => setAdminPass(e.target.value)}
-                      placeholder="Enter admin password"
-                    />
-                  </label>
-
-                  <div
-                    className="modal-actions"
-                    style={{ marginTop: "15px" }}
-                  >
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setIsModalOpen(false)}
-                    >
-                      Cancel
-                    </button>
-
-                    <button type="submit" className="btn btn-primary">
-                      Login as Admin
-                    </button>
-                  </div>
-                </form>
-              </>
-            ) : (
-              <>
-                <div className="modal-header">
-                  <h3>Add New School Event</h3>
-
-                  <button
-                    className="btn-close"
-                    onClick={() => setIsModalOpen(false)}
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleAddEvent} className="modal-form">
-                  <label>
-                    Title:
-                    <input
-                      type="text"
-                      required
-                      value={newEvent.title}
-                      onChange={(e) =>
-                        setNewEvent({
-                          ...newEvent,
-                          title: e.target.value
-                        })
-                      }
-                    />
-                  </label>
-
-                  <div className="form-row">
-                    <label>
-                      Day:
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. 15"
-                        value={newEvent.day}
-                        onChange={(e) =>
-                          setNewEvent({
-                            ...newEvent,
-                            day: e.target.value
-                          })
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Month:
-                      <select
-                        value={newEvent.month}
-                        onChange={(e) =>
-                          setNewEvent({
-                            ...newEvent,
-                            month: e.target.value
-                          })
-                        }
-                      >
-                        {[
-                          "JAN", "FEB", "MAR", "APR",
-                          "MAY", "JUN", "JUL", "AUG",
-                          "SEP", "OCT", "NOV", "DEC"
-                        ].map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="form-row">
-                    <label>
-                      Location:
-                      <input
-                        type="text"
-                        value={newEvent.location}
-                        onChange={(e) =>
-                          setNewEvent({
-                            ...newEvent,
-                            location: e.target.value
-                          })
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Time:
-                      <input
-                        type="text"
-                        value={newEvent.time}
-                        onChange={(e) =>
-                          setNewEvent({
-                            ...newEvent,
-                            time: e.target.value
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
-
-                  <label>
-                    Description:
-                    <textarea
-                      rows="3"
-                      value={newEvent.description}
-                      onChange={(e) =>
-                        setNewEvent({
-                          ...newEvent,
-                          description: e.target.value
-                        })
-                      }
-                    />
-                  </label>
-
-                  <div className="modal-actions">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setIsModalOpen(false)}
-                    >
-                      Cancel
-                    </button>
-
-                    <button type="submit" className="btn btn-primary">
-                      Save Event
-                    </button>
-                  </div>
-                </form>
-              </>
-            )}
+                <button type="submit" className="btn btn-primary">
+                  Save Event
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1116,28 +682,49 @@ function HomePage() {
   );
 }
 
-// Manual URL routing
+// ====================== ROUTING + PROTECTION ======================
 export default function App() {
   const currentPath =
     window.location.pathname.replace(/\/+$/, "") || "/";
 
+  const token = localStorage.getItem("token");
+  const role = localStorage.getItem("role");
+
+  // Protect admin dashboard
   if (currentPath === "/admin/dashboard") {
+    if (!token || role !== "admin") {
+      window.location.href = "/admin/login";
+      return null;
+    }
     return <AdminDashboard />;
   }
 
   if (currentPath === "/admin/login") {
-    return <LoginPage type="admin" />;
+    if (token && role === "admin") {
+      window.location.href = "/admin/dashboard";
+      return null;
+    }
+    return <AdminLogin />;
   }
 
+  // Protect student dashboard + results
   if (
     currentPath === "/student/dashboard" ||
     currentPath.startsWith("/student/results/")
   ) {
+    if (!token || role !== "student") {
+      window.location.href = "/student/login";
+      return null;
+    }
     return <StudentDashboard />;
   }
 
   if (currentPath === "/student/login") {
-    return <LoginPage type="student" />;
+    if (token && role === "student") {
+      window.location.href = "/student/dashboard";
+      return null;
+    }
+    return <StudentLogin />;
   }
 
   return <HomePage />;

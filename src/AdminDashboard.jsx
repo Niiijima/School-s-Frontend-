@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import schoolLogo from "./assets/logo.jpeg";
+import api from "./api/axios";
+import { logout } from "./api/auth";
 
 import {
   LayoutDashboard,
@@ -29,194 +31,13 @@ import {
 
 import "./AdminDashboard.css";
 
-const departments = ["Science", "Arts", "Commercial"];
-
-const juniorClasses = ["JSS 1", "JSS 2", "JSS 3"];
-const seniorClasses = ["SS 1", "SS 2", "SS 3"];
-
+const departments = ["Science", "Art", "Commercial"];
+const juniorClasses = ["JSS1", "JSS2", "JSS3"];
+const seniorClasses = ["SS1", "SS2", "SS3"];
 const secondaryClasses = [...juniorClasses, ...seniorClasses];
 const enrollmentClassOptions = [...secondaryClasses];
 
-const CURRENT_ACADEMIC_YEAR = "2026/2027";
-
-const initialStudents = [
-  {
-    id: "OTS001",
-    name: "David Ibrahim",
-    className: "JSS 1",
-    gender: "Male",
-    status: "Active",
-  },
-  {
-    id: "OTS002",
-    name: "Amara Johnson",
-    className: "JSS 2",
-    gender: "Female",
-    status: "Active",
-  },
-  {
-    id: "OTS003",
-    name: "Daniel Okafor",
-    className: "JSS 3",
-    gender: "Male",
-    status: "Active",
-  },
-  {
-    id: "OTS004",
-    name: "Grace Williams",
-    className: "SS 1",
-    department: "Science",
-    gender: "Female",
-    status: "Active",
-  },
-  {
-    id: "OTS005",
-    name: "Michael Okoro",
-    className: "SS 2",
-    department: "Arts",
-    gender: "Male",
-    status: "Active",
-  },
-  {
-    id: "OTS006",
-    name: "Esther Bello",
-    className: "SS 1",
-    department: "Commercial",
-    gender: "Female",
-    status: "Active",
-  },
-];
-
-const initialSubjects = [
-  {
-    id: "SUB001",
-    name: "Basic Science",
-    code: "BSC",
-    className: "JSS 1",
-  },
-  {
-    id: "SUB002",
-    name: "Mathematics",
-    code: "MTH",
-    className: "JSS 1",
-  },
-  {
-    id: "SUB003",
-    name: "Physics",
-    code: "PHY",
-    className: "SS 1",
-    department: "Science",
-  },
-  {
-    id: "SUB004",
-    name: "Government",
-    code: "GOV",
-    className: "SS 2",
-    department: "Arts",
-  },
-  {
-    id: "SUB005",
-    name: "Commerce",
-    code: "COM",
-    className: "SS 1",
-    department: "Commercial",
-  },
-];
-
-const initialEnrollments = [];
-
-const initialScores = [
-  {
-    id: "SCR001",
-    student: "OTS001",
-    studentName: "David Ibrahim",
-    admissionNumber: "OTS001",
-    subject: "SUB001",
-    subjectName: "Basic Science",
-    subjectCode: "BSC",
-    className: "JSS 1",
-    department: "",
-    term: "First Term",
-    academicYear: CURRENT_ACADEMIC_YEAR,
-    test1: 8,
-    test2: 7,
-    test3: 9,
-    assignment: 8,
-    exam: 55,
-    totalScore: 87,
-    grade: "A",
-    remark: "Distinction",
-    noInClass: null,
-  },
-  {
-    id: "SCR002",
-    student: "OTS004",
-    studentName: "Grace Williams",
-    admissionNumber: "OTS004",
-    subject: "SUB003",
-    subjectName: "Physics",
-    subjectCode: "PHY",
-    className: "SS 1",
-    department: "Science",
-    term: "First Term",
-    academicYear: CURRENT_ACADEMIC_YEAR,
-    test1: 8,
-    test2: 7,
-    test3: 8,
-    assignment: 9,
-    exam: 51,
-    totalScore: 83,
-    grade: "A1",
-    remark: "Excellent",
-    noInClass: null,
-  },
-  {
-    id: "SCR003",
-    student: "OTS005",
-    studentName: "Michael Okoro",
-    admissionNumber: "OTS005",
-    subject: "SUB004",
-    subjectName: "Government",
-    subjectCode: "GOV",
-    className: "SS 2",
-    department: "Arts",
-    term: "First Term",
-    academicYear: CURRENT_ACADEMIC_YEAR,
-    test1: 6,
-    test2: 7,
-    test3: 8,
-    assignment: 9,
-    exam: 45,
-    totalScore: 75,
-    grade: "A1",
-    remark: "Excellent",
-    noInClass: null,
-  },
-];
-
-const initialTerms = [
-  {
-    id: "TERM001",
-    name: "First Term",
-    session: CURRENT_ACADEMIC_YEAR,
-    isLocked: false,
-    isPublished: false,
-  },
-  {
-    id: "TERM002",
-    name: "Second Term",
-    session: "2025/2026",
-    isLocked: false,
-    isPublished: true,
-  },
-  {
-    id: "TERM003",
-    name: "Third Term",
-    session: "2025/2026",
-    isLocked: true,
-    isPublished: false,
-  },
-];
+const CURRENT_ACADEMIC_YEAR = "2025/2026";
 
 const navigation = [
   { label: "Overview", icon: LayoutDashboard },
@@ -235,126 +56,55 @@ function isSeniorClass(className) {
 
 function getNextClass(className) {
   const index = secondaryClasses.indexOf(className);
-
-  if (index < 0 || index >= secondaryClasses.length - 1) {
-    return className;
-  }
-
+  if (index < 0 || index >= secondaryClasses.length - 1) return className;
   return secondaryClasses[index + 1];
 }
 
-// Matches the section-based grading in your backend gradeCalculator.js.
-function calculateGrade(
-  section,
-  test1 = 0,
-  test2 = 0,
-  test3 = 0,
-  assignment = 0,
-  exam = 0
-) {
+function calculateGrade(section, test1 = 0, test2 = 0, test3 = 0, assignment = 0, exam = 0) {
   const totalScore =
-    Number(test1) +
-    Number(test2) +
-    Number(test3) +
-    Number(assignment) +
-    Number(exam);
-
+    Number(test1) + Number(test2) + Number(test3) + Number(assignment) + Number(exam);
   const standardSection = section ? section.toUpperCase() : "JSS";
 
-  if (standardSection === "SSS") {
-    if (totalScore >= 75) {
-      return { totalScore, grade: "A1", remark: "Excellent" };
-    }
-
-    if (totalScore >= 70) {
-      return { totalScore, grade: "B2", remark: "Very Good" };
-    }
-
-    if (totalScore >= 65) {
-      return { totalScore, grade: "B3", remark: "Good" };
-    }
-
-    if (totalScore >= 60) {
-      return { totalScore, grade: "C4", remark: "Credit" };
-    }
-
-    if (totalScore >= 55) {
-      return { totalScore, grade: "C5", remark: "Credit" };
-    }
-
-    if (totalScore >= 50) {
-      return { totalScore, grade: "C6", remark: "Credit" };
-    }
-
-    if (totalScore >= 45) {
-      return { totalScore, grade: "D7", remark: "Pass" };
-    }
-
-    if (totalScore >= 40) {
-      return { totalScore, grade: "E8", remark: "Fair" };
-    }
-
+  if (standardSection === "SSS" || standardSection === "SS") {
+    if (totalScore >= 75) return { totalScore, grade: "A1", remark: "Excellent" };
+    if (totalScore >= 70) return { totalScore, grade: "B2", remark: "Very Good" };
+    if (totalScore >= 65) return { totalScore, grade: "B3", remark: "Good" };
+    if (totalScore >= 60) return { totalScore, grade: "C4", remark: "Credit" };
+    if (totalScore >= 55) return { totalScore, grade: "C5", remark: "Credit" };
+    if (totalScore >= 50) return { totalScore, grade: "C6", remark: "Credit" };
+    if (totalScore >= 45) return { totalScore, grade: "D7", remark: "Pass" };
+    if (totalScore >= 40) return { totalScore, grade: "E8", remark: "Fair" };
     return { totalScore, grade: "F9", remark: "Fail" };
   }
 
-  if (totalScore >= 70) {
-    return { totalScore, grade: "A", remark: "Distinction" };
-  }
-
-  if (totalScore >= 60) {
-    return { totalScore, grade: "B", remark: "Upper Credit" };
-  }
-
-  if (totalScore >= 50) {
-    return { totalScore, grade: "C", remark: "Lower Credit" };
-  }
-
-  if (totalScore >= 40) {
-    return { totalScore, grade: "P", remark: "Pass" };
-  }
-
+  if (totalScore >= 70) return { totalScore, grade: "A", remark: "Distinction" };
+  if (totalScore >= 60) return { totalScore, grade: "B", remark: "Upper Credit" };
+  if (totalScore >= 50) return { totalScore, grade: "C", remark: "Lower Credit" };
+  if (totalScore >= 40) return { totalScore, grade: "P", remark: "Pass" };
   return { totalScore, grade: "F", remark: "Fail" };
 }
 
-// Automatic year tutor comment.
 function getAutomaticYearTutorComment(averageScore) {
-  if (averageScore >= 75) {
+  if (averageScore >= 75)
     return "An exceptionally brilliant performance. Keep maintaining this golden standard.";
-  }
-
-  if (averageScore >= 65) {
+  if (averageScore >= 65)
     return "A highly commendable result. With this consistency, top honors are within reach next term.";
-  }
-
-  if (averageScore >= 50) {
+  if (averageScore >= 50)
     return "A good performance, but you possess the capability to attain higher credit marks.";
-  }
-
-  if (averageScore >= 40) {
+  if (averageScore >= 40)
     return "Passable terminal record. You are playing on the borderline; step up your study habits.";
-  }
-
   return "An unsatisfactory performance. Intensive remedial study and closer supervision are urgently required.";
 }
 
-// Automatic principal/admin comment.
 function getAutomaticAdminComment(averageScore) {
-  if (averageScore >= 75) {
+  if (averageScore >= 75)
     return "Outstanding academic excellence. A proud reflection of hard work. Keep it up!";
-  }
-
-  if (averageScore >= 65) {
+  if (averageScore >= 65)
     return "Very impressive progress. Promising results showing dedication to studies.";
-  }
-
-  if (averageScore >= 50) {
+  if (averageScore >= 50)
     return "A satisfactory performance. Focus more on weak areas to secure top tiers next session.";
-  }
-
-  if (averageScore >= 40) {
+  if (averageScore >= 40)
     return "Fair trial, but there is vast room for improvement. Double your efforts.";
-  }
-
   return "Unacceptable standard. Must show a completely renewed attitude to work next term to pass.";
 }
 
@@ -362,45 +112,67 @@ function getStudentSection(className) {
   return isSeniorClass(className) ? "SSS" : "JSS";
 }
 
+function normalizeStudent(s) {
+  return {
+    id: s._id || s.id,
+    name: s.name,
+    admissionNumber: s.admissionNumber || s.id,
+    className: s.currentClass || s.className,
+    department: s.department || "",
+    gender: s.gender || "",
+    status: s.status || "active",
+  };
+}
+
+function normalizeSubject(s) {
+  return {
+    id: s._id || s.id,
+    name: s.name,
+    code: s.code || s.subjectCode,
+    className: s.className || s.currentClass || "",
+    department: s.department || "",
+  };
+}
+
 function AdminDashboard() {
   const [activePage, setActivePage] = useState("Overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const [students, setStudents] = useState(initialStudents);
-  const [subjects, setSubjects] = useState(initialSubjects);
-  const [enrollments, setEnrollments] = useState(initialEnrollments);
-  const [scores, setScores] = useState(initialScores);
-  const [terms, setTerms] = useState(initialTerms);
+  const [students, setStudents] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [enrollments, setEnrollments] = useState([]);
+  const [scores, setScores] = useState([]);
+  const [terms, setTerms] = useState([
+    { id: "TERM001", name: "First Term", session: CURRENT_ACADEMIC_YEAR, isLocked: false, isPublished: false },
+    { id: "TERM002", name: "Second Term", session: CURRENT_ACADEMIC_YEAR, isLocked: false, isPublished: false },
+    { id: "TERM003", name: "Third Term", session: CURRENT_ACADEMIC_YEAR, isLocked: false, isPublished: false },
+  ]);
 
   const [modal, setModal] = useState("");
   const [notice, setNotice] = useState("");
 
-  const [studentClass, setStudentClass] = useState("JSS 1");
+  const [studentClass, setStudentClass] = useState("JSS1");
   const [studentDepartment, setStudentDepartment] = useState("Science");
-
-  const [subjectClass, setSubjectClass] = useState("JSS 1");
+  const [subjectClass, setSubjectClass] = useState("JSS1");
   const [subjectDepartment, setSubjectDepartment] = useState("Science");
-
-  const [scoreClass, setScoreClass] = useState("JSS 1");
+  const [scoreClass, setScoreClass] = useState("JSS1");
   const [scoreDepartment, setScoreDepartment] = useState("Science");
-
-  const [resultClass, setResultClass] = useState("JSS 1");
+  const [resultClass, setResultClass] = useState("JSS1");
   const [resultDepartment, setResultDepartment] = useState("Science");
-
   const [resultTerm, setResultTerm] = useState("First Term");
-  const [resultAcademicYear, setResultAcademicYear] = useState(
-    CURRENT_ACADEMIC_YEAR
-  );
-
-  const [promotionClass, setPromotionClass] = useState("JSS 1");
+  const [resultAcademicYear, setResultAcademicYear] = useState(CURRENT_ACADEMIC_YEAR);
+  const [promotionClass, setPromotionClass] = useState("JSS1");
   const [promotionDepartment, setPromotionDepartment] = useState("Science");
-  const [destinationClass, setDestinationClass] = useState("JSS 2");
+  const [destinationClass, setDestinationClass] = useState("JSS2");
   const [destinationDepartment, setDestinationDepartment] = useState("Science");
 
   const [studentForm, setStudentForm] = useState({
     name: "",
-    className: "JSS 1",
+    admissionNumber: "",
+    password: "",
+    className: "JSS1",
     department: "Science",
     gender: "Female",
   });
@@ -408,13 +180,13 @@ function AdminDashboard() {
   const [subjectForm, setSubjectForm] = useState({
     name: "",
     code: "",
-    className: "JSS 1",
+    className: "JSS1",
     department: "Science",
   });
 
   const [enrollmentForm, setEnrollmentForm] = useState({
     student: "",
-    className: "JSS 1",
+    className: "JSS1",
     department: "",
     term: "First Term",
   });
@@ -432,21 +204,9 @@ function AdminDashboard() {
     noInClass: "",
   });
 
-  const filtered = (items, fields) => {
-    const query = search.trim().toLowerCase();
-
-    if (!query) return items;
-
-    return items.filter((item) =>
-      fields.some((field) =>
-        String(item[field] ?? "").toLowerCase().includes(query)
-      )
-    );
-  };
-
   const showNotice = (message) => {
     setNotice(message);
-    window.setTimeout(() => setNotice(""), 3000);
+    window.setTimeout(() => setNotice(""), 3500);
   };
 
   const openPage = (page) => {
@@ -455,135 +215,135 @@ function AdminDashboard() {
     setSidebarOpen(false);
   };
 
-  // Add student.
-  const addStudent = (event) => {
-    event.preventDefault();
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [studentsRes, subjectsRes] = await Promise.all([
+        api.get("/students"),
+        api.get("/subjects").catch(() => ({ data: [] })),
+      ]);
 
-    if (!studentForm.name.trim()) {
-      showNotice("Please enter the student's full name.");
+      const studentList = studentsRes.data.students || studentsRes.data || [];
+      const subjectList = subjectsRes.data.subjects || subjectsRes.data || [];
+
+      setStudents(studentList.map(normalizeStudent));
+      setSubjects(subjectList.map(normalizeSubject));
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Failed to load data from server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filtered = (items, fields) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((item) =>
+      fields.some((field) => String(item[field] ?? "").toLowerCase().includes(query))
+    );
+  };
+
+  // ====================== API ACTIONS ======================
+
+  const addStudent = async (event) => {
+    event.preventDefault();
+    if (!studentForm.name.trim() || !studentForm.admissionNumber.trim() || !studentForm.password) {
+      showNotice("Please fill name, admission number and password.");
       return;
     }
-
     const senior = isSeniorClass(studentForm.className);
-
     if (senior && !studentForm.department) {
       showNotice("Please select a department for the SS class.");
       return;
     }
 
-    setStudents((current) => [
-      ...current,
-      {
-        id: `OTS${String(current.length + 1).padStart(3, "0")}`,
+    try {
+      await api.post("/students/register", {
         name: studentForm.name.trim(),
-        className: studentForm.className,
-        department: senior ? studentForm.department : "",
+        admissionNumber: studentForm.admissionNumber.trim(),
+        password: studentForm.password,
+        currentClass: studentForm.className,
+        department: senior ? studentForm.department : null,
         gender: studentForm.gender,
-        status: "Active",
-      },
-    ]);
-
-    setStudentForm({
-      name: "",
-      className: "JSS 1",
-      department: "Science",
-      gender: "Female",
-    });
-
-    setModal("");
-    showNotice("Student added to the local preview.");
+      });
+      showNotice("Student registered successfully.");
+      setModal("");
+      setStudentForm({
+        name: "",
+        admissionNumber: "",
+        password: "",
+        className: "JSS1",
+        department: "Science",
+        gender: "Female",
+      });
+      await loadData();
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Failed to register student.");
+    }
   };
 
-  // Add subject.
-  const addSubject = (event) => {
+  const addSubject = async (event) => {
     event.preventDefault();
-
     if (!subjectForm.name.trim() || !subjectForm.code.trim()) {
-      showNotice("Please enter the subject name and code.");
+      showNotice("Please enter subject name and code.");
       return;
     }
-
     const senior = isSeniorClass(subjectForm.className);
-
     if (senior && !subjectForm.department) {
       showNotice("Please select a department for the SS class.");
       return;
     }
 
-    setSubjects((current) => [
-      ...current,
-      {
-        id: `SUB${String(current.length + 1).padStart(3, "0")}`,
+    try {
+      await api.post("/subjects", {
         name: subjectForm.name.trim(),
         code: subjectForm.code.trim().toUpperCase(),
         className: subjectForm.className,
-        department: senior ? subjectForm.department : "",
-      },
-    ]);
-
-    setSubjectForm({
-      name: "",
-      code: "",
-      className: "JSS 1",
-      department: "Science",
-    });
-
-    setModal("");
-    showNotice("Subject added to the local preview.");
+        department: senior ? subjectForm.department : null,
+      });
+      showNotice("Subject added successfully.");
+      setModal("");
+      setSubjectForm({ name: "", code: "", className: "JSS1", department: "Science" });
+      await loadData();
+    } catch (err) {
+      // Fallback local if subjects endpoint is not ready
+      setSubjects((current) => [
+        ...current,
+        {
+          id: `SUB${Date.now()}`,
+          name: subjectForm.name.trim(),
+          code: subjectForm.code.trim().toUpperCase(),
+          className: subjectForm.className,
+          department: senior ? subjectForm.department : "",
+        },
+      ]);
+      setModal("");
+      showNotice(err.response?.data?.message || "Subject saved locally (API may not be ready).");
+    }
   };
 
-  // Manually enroll a student.
   const addEnrollment = (event) => {
     event.preventDefault();
-
     const studentName = enrollmentForm.student.trim();
-
     if (!studentName) {
       showNotice("Please enter the student's full name.");
       return;
     }
-
     const senior = isSeniorClass(enrollmentForm.className);
     const department = senior ? enrollmentForm.department : "";
-
     if (senior && !department) {
       showNotice("Please select a department for the SS class.");
-      return;
-    }
-
-    const matchingStudent = students.find(
-      (student) =>
-        student.name.trim().toLowerCase() === studentName.toLowerCase() &&
-        student.className === enrollmentForm.className &&
-        (student.department || "") === department
-    );
-
-    const duplicate = enrollments.some((enrollment) => {
-      const sameStudent =
-        matchingStudent && enrollment.studentId
-          ? enrollment.studentId === matchingStudent.id
-          : enrollment.student.trim().toLowerCase() ===
-            studentName.toLowerCase();
-
-      return (
-        sameStudent &&
-        enrollment.className === enrollmentForm.className &&
-        (enrollment.department || "") === department &&
-        enrollment.term === enrollmentForm.term &&
-        enrollment.session === CURRENT_ACADEMIC_YEAR
-      );
-    });
-
-    if (duplicate) {
-      showNotice("This student is already enrolled for the selected term.");
       return;
     }
 
     setEnrollments((current) => [
       ...current,
       {
-        id: `ENR${String(current.length + 1).padStart(3, "0")}`,
-        studentId: matchingStudent?.id || "",
+        id: `ENR${Date.now()}`,
         student: studentName,
         className: enrollmentForm.className,
         department,
@@ -591,122 +351,37 @@ function AdminDashboard() {
         session: CURRENT_ACADEMIC_YEAR,
       },
     ]);
-
-    setEnrollmentForm({
-      student: "",
-      className: "JSS 1",
-      department: "",
-      term: "First Term",
-    });
-
+    setEnrollmentForm({ student: "", className: "JSS1", department: "", term: "First Term" });
     setModal("");
-    showNotice("Student enrollment added to the local preview.");
+    showNotice("Enrollment added (local preview).");
   };
 
-  // Enroll every student in the Students preview.
   const enrollAllStudents = () => {
     if (students.length === 0) {
-      showNotice("There are no students available to enroll.");
+      showNotice("No students available to enroll.");
       return;
     }
-
-    const term = "First Term";
-    const session = CURRENT_ACADEMIC_YEAR;
-
-    const studentsToEnroll = students.filter((student) => {
-      return !enrollments.some((enrollment) => {
-        const sameStudent = enrollment.studentId
-          ? enrollment.studentId === student.id
-          : enrollment.student.trim().toLowerCase() ===
-              student.name.trim().toLowerCase() &&
-            enrollment.className === student.className &&
-            (enrollment.department || "") === (student.department || "");
-
-        return (
-          sameStudent &&
-          enrollment.className === student.className &&
-          (enrollment.department || "") === (student.department || "") &&
-          enrollment.term === term &&
-          enrollment.session === session
-        );
-      });
-    });
-
-    if (studentsToEnroll.length === 0) {
-      showNotice("All students are already enrolled for First Term.");
-      return;
-    }
-
-    const newEnrollments = studentsToEnroll.map((student, index) => ({
-      id: `ENR${String(enrollments.length + index + 1).padStart(3, "0")}`,
-      studentId: student.id,
-      student: student.name,
-      className: student.className,
-      department: student.department || "",
-      term,
-      session,
+    const newOnes = students.map((s, i) => ({
+      id: `ENR${Date.now()}${i}`,
+      studentId: s.id,
+      student: s.name,
+      className: s.className,
+      department: s.department || "",
+      term: "First Term",
+      session: CURRENT_ACADEMIC_YEAR,
     }));
-
-    setEnrollments((current) => [...current, ...newEnrollments]);
-
-    showNotice(
-      `${newEnrollments.length} student${
-        newEnrollments.length === 1 ? "" : "s"
-      } enrolled successfully for First Term.`
-    );
+    setEnrollments((c) => [...c, ...newOnes]);
+    showNotice(`${newOnes.length} students enrolled (local preview).`);
   };
 
-  const visibleStudents = filtered(
-    students.filter(
-      (student) =>
-        student.className === studentClass &&
-        (!isSeniorClass(studentClass) ||
-          student.department === studentDepartment)
-    ),
-    ["id", "name", "className", "department", "gender"]
-  );
-
-  const visibleSubjects = filtered(
-    subjects.filter(
-      (subject) =>
-        subject.className === subjectClass &&
-        (!isSeniorClass(subjectClass) ||
-          subject.department === subjectDepartment)
-    ),
-    ["id", "name", "code", "className", "department"]
-  );
-
-  const scoreStudents = students.filter(
-    (student) =>
-      student.className === scoreClass &&
-      (!isSeniorClass(scoreClass) ||
-        student.department === scoreDepartment)
-  );
-
-  const scoreSubjects = subjects.filter(
-    (subject) =>
-      subject.className === scoreClass &&
-      (!isSeniorClass(scoreClass) ||
-        subject.department === scoreDepartment)
-  );
-
-  // Submit or update a score using the backend-compatible fields.
-  const addScore = (event) => {
+  const addScore = async (event) => {
     event.preventDefault();
-
     if (!scoreForm.student || !scoreForm.subject) {
       showNotice("Please select a student and subject.");
       return;
     }
-
-    if (!scoreForm.academicYear.trim()) {
-      showNotice("Please enter the academic year.");
-      return;
-    }
-
     const fields = ["test1", "test2", "test3", "assignment", "exam"];
-
-    if (fields.some((field) => scoreForm[field] === "")) {
+    if (fields.some((f) => scoreForm[f] === "")) {
       showNotice("Please complete all score fields.");
       return;
     }
@@ -717,297 +392,226 @@ function AdminDashboard() {
     const assignment = Number(scoreForm.assignment);
     const exam = Number(scoreForm.exam);
 
-    const caScores = [test1, test2, test3, assignment];
-
-    if (
-      caScores.some(
-        (value) => !Number.isFinite(value) || value < 0 || value > 10
-      )
-    ) {
+    if ([test1, test2, test3, assignment].some((v) => v < 0 || v > 10)) {
       showNotice("Each CA component must be between 0 and 10.");
       return;
     }
-
-    if (!Number.isFinite(exam) || exam < 0 || exam > 60) {
-      showNotice("Examination score must be between 0 and 60.");
+    if (exam < 0 || exam > 60) {
+      showNotice("Exam score must be between 0 and 60.");
       return;
     }
 
-    if (
-      scoreForm.noInClass !== "" &&
-      (!Number.isInteger(Number(scoreForm.noInClass)) ||
-        Number(scoreForm.noInClass) < 1)
-    ) {
-      showNotice("Manual class position must be a positive whole number.");
-      return;
-    }
-
-    const selectedStudent = students.find(
-      (student) => student.id === scoreForm.student
-    );
-
-    const selectedSubject = subjects.find(
-      (subject) => subject.id === scoreForm.subject
-    );
-
+    const selectedStudent = students.find((s) => s.id === scoreForm.student);
+    const selectedSubject = subjects.find((s) => s.id === scoreForm.subject);
     if (!selectedStudent || !selectedSubject) {
-      showNotice("The selected student or subject could not be found.");
+      showNotice("Selected student or subject not found.");
       return;
     }
 
-    if (
-      selectedSubject.className !== selectedStudent.className ||
-      (selectedSubject.department || "") !==
-        (selectedStudent.department || "")
-    ) {
-      showNotice(
-        "The selected subject does not belong to this student's class and department."
+    try {
+      await api.post("/grades/submit-scores", {
+        admissionNumber: selectedStudent.admissionNumber,
+        subjectCode: selectedSubject.code,
+        test1,
+        test2,
+        test3,
+        assignment,
+        exam,
+        term: scoreForm.term,
+        academicYear: scoreForm.academicYear.trim(),
+        noInClass: scoreForm.noInClass === "" ? undefined : Number(scoreForm.noInClass),
+      });
+
+      const gradeResult = calculateGrade(
+        getStudentSection(selectedStudent.className),
+        test1, test2, test3, assignment, exam
       );
-      return;
+
+      setScores((current) => [
+        ...current.filter(
+          (s) =>
+            !(
+              s.admissionNumber === selectedStudent.admissionNumber &&
+              s.subjectCode === selectedSubject.code &&
+              s.term === scoreForm.term &&
+              s.academicYear === scoreForm.academicYear.trim()
+            )
+        ),
+        {
+          id: `SCR${Date.now()}`,
+          student: selectedStudent.id,
+          studentName: selectedStudent.name,
+          admissionNumber: selectedStudent.admissionNumber,
+          subject: selectedSubject.id,
+          subjectName: selectedSubject.name,
+          subjectCode: selectedSubject.code,
+          className: selectedStudent.className,
+          department: selectedStudent.department || "",
+          term: scoreForm.term,
+          academicYear: scoreForm.academicYear.trim(),
+          test1, test2, test3, assignment, exam,
+          totalScore: gradeResult.totalScore,
+          grade: gradeResult.grade,
+          remark: gradeResult.remark,
+          noInClass: scoreForm.noInClass === "" ? null : Number(scoreForm.noInClass),
+        },
+      ]);
+
+      setScoreForm({
+        student: "",
+        subject: "",
+        test1: "",
+        test2: "",
+        test3: "",
+        assignment: "",
+        exam: "",
+        term: "First Term",
+        academicYear: CURRENT_ACADEMIC_YEAR,
+        noInClass: "",
+      });
+      setModal("");
+      showNotice("Score submitted successfully.");
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Failed to submit score.");
     }
-
-    const lockedTerm = terms.find(
-      (term) =>
-        term.name === scoreForm.term &&
-        term.session === scoreForm.academicYear.trim() &&
-        term.isLocked
-    );
-
-    if (lockedTerm) {
-      showNotice("This academic term is locked. Scores cannot be submitted.");
-      return;
-    }
-
-    const gradeResult = calculateGrade(
-      getStudentSection(selectedStudent.className),
-      test1,
-      test2,
-      test3,
-      assignment,
-      exam
-    );
-
-    const scoreIdentity = (score) =>
-      (score.admissionNumber || score.student) === selectedStudent.id &&
-      (score.subjectCode
-        ? score.subjectCode === selectedSubject.code
-        : score.subject === selectedSubject.id) &&
-      score.term === scoreForm.term &&
-      score.academicYear === scoreForm.academicYear.trim();
-
-    const existingScore = scores.find(scoreIdentity);
-
-    const newScore = {
-      id: existingScore?.id || `SCR${Date.now()}`,
-
-      // IDs correspond to the backend's student and subject references.
-      student: selectedStudent.id,
-      subject: selectedSubject.id,
-
-      // Display fields for this local frontend preview.
-      studentName: selectedStudent.name,
-      admissionNumber: selectedStudent.id,
-      subjectName: selectedSubject.name,
-      subjectCode: selectedSubject.code,
-
-      className: selectedStudent.className,
-      department: selectedStudent.department || "",
-
-      term: scoreForm.term,
-      academicYear: scoreForm.academicYear.trim(),
-
-      test1,
-      test2,
-      test3,
-      assignment,
-      exam,
-
-      totalScore: gradeResult.totalScore,
-      grade: gradeResult.grade,
-      remark: gradeResult.remark,
-
-      // This is the frontend counterpart of backend noInClass.
-      noInClass:
-        scoreForm.noInClass === ""
-          ? null
-          : Number(scoreForm.noInClass),
-    };
-
-    setScores((current) => {
-      const existingIndex = current.findIndex(scoreIdentity);
-
-      if (existingIndex === -1) {
-        return [...current, newScore];
-      }
-
-      return current.map((score, index) =>
-        index === existingIndex ? newScore : score
-      );
-    });
-
-    setScoreForm({
-      student: "",
-      subject: "",
-      test1: "",
-      test2: "",
-      test3: "",
-      assignment: "",
-      exam: "",
-      term: "First Term",
-      academicYear: CURRENT_ACADEMIC_YEAR,
-      noInClass: "",
-    });
-
-    setModal("");
-    showNotice(
-      existingScore
-        ? "Existing score updated in the local preview."
-        : "Score added to the local preview."
-    );
   };
 
-  const toggleTerm = (id) => {
-    setTerms((current) =>
-      current.map((term) =>
-        term.id === id
-          ? { ...term, isLocked: !term.isLocked }
-          : term
-      )
-    );
+  const toggleTerm = async (id) => {
+    const term = terms.find((t) => t.id === id);
+    if (!term) return;
 
-    showNotice("Term lock status updated in the local preview.");
+    try {
+      await api.patch("/grades/admin/toggle-lock", {
+        term: term.name,
+        academicYear: term.session,
+      });
+      setTerms((current) =>
+        current.map((t) => (t.id === id ? { ...t, isLocked: !t.isLocked } : t))
+      );
+      showNotice(`Term ${term.isLocked ? "unlocked" : "locked"} successfully.`);
+    } catch (err) {
+      // local fallback
+      setTerms((current) =>
+        current.map((t) => (t.id === id ? { ...t, isLocked: !t.isLocked } : t))
+      );
+      showNotice(err.response?.data?.message || "Term lock updated locally.");
+    }
   };
 
   const publishTerm = (id) => {
     setTerms((current) =>
-      current.map((term) =>
-        term.id === id
-          ? { ...term, isPublished: !term.isPublished }
-          : term
-      )
+      current.map((t) => (t.id === id ? { ...t, isPublished: !t.isPublished } : t))
     );
-
-    showNotice("Term publication status updated in the local preview.");
+    showNotice("Publication status updated (local preview).");
   };
 
-  const promotionStudents = students.filter(
-    (student) =>
-      student.className === promotionClass &&
-      (!isSeniorClass(promotionClass) ||
-        student.department === promotionDepartment)
-  );
-
-  const promoteStudent = (id) => {
+  const promoteStudent = async (id) => {
     if (
       destinationClass === promotionClass &&
-      (!isSeniorClass(destinationClass) ||
-        destinationDepartment === promotionDepartment)
+      (!isSeniorClass(destinationClass) || destinationDepartment === promotionDepartment)
     ) {
       showNotice("Choose a different destination class or department.");
       return;
     }
 
-    setStudents((current) =>
-      current.map((student) => {
-        if (student.id !== id) return student;
-
-        return {
-          ...student,
-          className: destinationClass,
-          department: isSeniorClass(destinationClass)
-            ? destinationDepartment
-            : "",
-          status: "Promoted",
-        };
-      })
-    );
-
-    showNotice("Student promoted in the local preview.");
+    try {
+      await api.patch(`/students/${id}/promote`, {
+        nextClass: destinationClass,
+        department: isSeniorClass(destinationClass) ? destinationDepartment : null,
+      });
+      showNotice("Student promoted successfully.");
+      await loadData();
+    } catch (err) {
+      // local fallback
+      setStudents((current) =>
+        current.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                className: destinationClass,
+                department: isSeniorClass(destinationClass) ? destinationDepartment : "",
+                status: "Promoted",
+              }
+            : s
+        )
+      );
+      showNotice(err.response?.data?.message || "Student promoted locally.");
+    }
   };
 
-  const deleteStudent = (id) => {
-    setStudents((current) =>
-      current.filter((student) => student.id !== id)
-    );
-
-    showNotice("Student removed from the local preview.");
+  const deleteStudent = async (id) => {
+    if (!window.confirm("Delete this student permanently?")) return;
+    try {
+      await api.delete(`/students/${id}`);
+      showNotice("Student deleted successfully.");
+      await loadData();
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Failed to delete student.");
+    }
   };
 
-  const stats = [
-    {
-      label: "Total Students",
-      value: students.length,
-      icon: Users,
-      color: "blue",
-    },
-    {
-      label: "Subjects",
-      value: subjects.length,
-      icon: BookOpen,
-      color: "gold",
-    },
-    {
-      label: "Enrollments",
-      value: enrollments.length,
-      icon: UserPlus,
-      color: "green",
-    },
-    {
-      label: "Scores Submitted",
-      value: scores.length,
-      icon: ClipboardList,
-      color: "purple",
-    },
-  ];
-
-  const pageDescriptions = {
-    Overview: "Here's what's happening at your school today.",
-    Students:
-      "Create and manage secondary-school student records by class and department.",
-    Subjects:
-      "Manage secondary-school subjects by class and department.",
-    Enrollments:
-      "Manage JSS and SS student class, department and term enrollments.",
-    "Submit Scores":
-      "Record continuous assessment and examination scores by class and department.",
-    "Student Results":
-      "Review subject grades, terminal averages and automatic teacher comments.",
-    "Academic Terms":
-      "Control term access and publish academic terms.",
-    "Promote Students":
-      "Promote students by class and department.",
+  const handleLogout = () => {
+    logout();
+    window.location.href = "/admin/login";
   };
 
-  const pageTitle =
-    activePage === "Submit Scores" ? "Score Management" : activePage;
+  // ====================== DERIVED DATA ======================
 
-  // Overall results are grouped by student, term and academic year.
+  const visibleStudents = filtered(
+    students.filter(
+      (s) =>
+        s.className === studentClass &&
+        (!isSeniorClass(studentClass) || s.department === studentDepartment)
+    ),
+    ["id", "name", "admissionNumber", "className", "department", "gender"]
+  );
+
+  const visibleSubjects = filtered(
+    subjects.filter(
+      (s) =>
+        s.className === subjectClass &&
+        (!isSeniorClass(subjectClass) || s.department === subjectDepartment)
+    ),
+    ["id", "name", "code", "className", "department"]
+  );
+
+  const scoreStudents = students.filter(
+    (s) =>
+      s.className === scoreClass &&
+      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
+  );
+
+  const scoreSubjects = subjects.filter(
+    (s) =>
+      s.className === scoreClass &&
+      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
+  );
+
+  const promotionStudents = students.filter(
+    (s) =>
+      s.className === promotionClass &&
+      (!isSeniorClass(promotionClass) || s.department === promotionDepartment)
+  );
+
   const classResultScores = scores.filter(
-    (score) =>
-      score.className === resultClass &&
-      (!isSeniorClass(resultClass) ||
-        score.department === resultDepartment) &&
-      score.term === resultTerm &&
-      score.academicYear === resultAcademicYear
+    (s) =>
+      s.className === resultClass &&
+      (!isSeniorClass(resultClass) || s.department === resultDepartment) &&
+      s.term === resultTerm &&
+      s.academicYear === resultAcademicYear
   );
 
   const visibleResultScores = filtered(classResultScores, [
-    "studentName",
-    "student",
-    "subjectName",
-    "subject",
-    "admissionNumber",
-    "subjectCode",
+    "studentName", "admissionNumber", "subjectName", "subjectCode",
   ]);
 
   const groupedResults = Object.values(
     visibleResultScores.reduce((groups, score) => {
-      const key = `${score.admissionNumber || score.student}-${score.term}-${score.academicYear}`;
-
+      const key = `${score.admissionNumber}-${score.term}-${score.academicYear}`;
       if (!groups[key]) {
         groups[key] = {
-          studentId: score.admissionNumber || score.student,
-          studentName: score.studentName || score.student,
+          studentId: score.admissionNumber,
+          studentName: score.studentName,
           className: score.className,
           department: score.department || "",
           term: score.term,
@@ -1015,20 +619,13 @@ function AdminDashboard() {
           scores: [],
         };
       }
-
       groups[key].scores.push(score);
-
       return groups;
     }, {})
   ).map((result) => {
-    const total = result.scores.reduce(
-      (sum, score) => sum + Number(score.totalScore || 0),
-      0
-    );
-
+    const total = result.scores.reduce((sum, s) => sum + Number(s.totalScore || 0), 0);
     const subjectCount = result.scores.length;
     const average = subjectCount ? total / subjectCount : 0;
-
     return {
       ...result,
       total,
@@ -1044,14 +641,10 @@ function AdminDashboard() {
     Number(scoreForm.test2 || 0) +
     Number(scoreForm.test3 || 0) +
     Number(scoreForm.assignment || 0);
-
   const scoreExam = Number(scoreForm.exam || 0);
   const scoreTotal = scoreCA + scoreExam;
 
-  const selectedScoreStudent = students.find(
-    (student) => student.id === scoreForm.student
-  );
-
+  const selectedScoreStudent = students.find((s) => s.id === scoreForm.student);
   const liveGrade = selectedScoreStudent
     ? calculateGrade(
         getStudentSection(selectedScoreStudent.className),
@@ -1063,6 +656,28 @@ function AdminDashboard() {
       )
     : null;
 
+  const stats = [
+    { label: "Total Students", value: students.length, icon: Users, color: "blue" },
+    { label: "Subjects", value: subjects.length, icon: BookOpen, color: "gold" },
+    { label: "Enrollments", value: enrollments.length, icon: UserPlus, color: "green" },
+    { label: "Scores Submitted", value: scores.length, icon: ClipboardList, color: "purple" },
+  ];
+
+  const pageDescriptions = {
+    Overview: "Here's what's happening at your school today.",
+    Students: "Create and manage secondary-school student records by class and department.",
+    Subjects: "Manage secondary-school subjects by class and department.",
+    Enrollments: "Manage JSS and SS student class, department and term enrollments.",
+    "Submit Scores": "Record continuous assessment and examination scores by class and department.",
+    "Student Results": "Review subject grades, terminal averages and automatic teacher comments.",
+    "Academic Terms": "Control term access and publish academic terms.",
+    "Promote Students": "Promote students by class and department.",
+  };
+
+  const pageTitle = activePage === "Submit Scores" ? "Score Management" : activePage;
+
+  // ====================== RENDER ======================
+
   return (
     <div className="admin-shell">
       {sidebarOpen && (
@@ -1073,47 +688,31 @@ function AdminDashboard() {
         />
       )}
 
-      <aside
-        className={`admin-sidebar ${
-          sidebarOpen ? "admin-sidebar-open" : ""
-        }`}
-      >
+      <aside className={`admin-sidebar ${sidebarOpen ? "admin-sidebar-open" : ""}`}>
         <div className="admin-brand">
           <div className="admin-brand-logo">
             <img src={schoolLogo} alt="O'lak Triumph School" />
           </div>
-
           <div>
             <strong>O'lak Triumph</strong>
             <span>School Administration</span>
           </div>
-
-          <button
-            className="admin-mobile-close"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close menu"
-          >
+          <button className="admin-mobile-close" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
             <X size={20} />
           </button>
         </div>
 
         <div className="admin-nav-label">MAIN MENU</div>
-
         <nav className="admin-nav">
           {navigation.map(({ label, icon: Icon }) => (
             <button
               key={label}
-              className={`admin-nav-link ${
-                activePage === label ? "active" : ""
-              }`}
+              className={`admin-nav-link ${activePage === label ? "active" : ""}`}
               onClick={() => openPage(label)}
             >
               <Icon size={19} />
               <span>{label}</span>
-
-              {activePage === label && (
-                <ChevronRight size={16} className="admin-nav-arrow" />
-              )}
+              {activePage === label && <ChevronRight size={16} className="admin-nav-arrow" />}
             </button>
           ))}
         </nav>
@@ -1126,12 +725,10 @@ function AdminDashboard() {
               <span>Administrator workspace</span>
             </div>
           </div>
-
-          <a className="admin-logout" href="/admin/login">
+          <button className="admin-logout" onClick={handleLogout} style={{ border: 0, background: "transparent", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 8 }}>
             <LogOut size={18} />
-            <span>Back to Login</span>
-          </a>
-
+            <span>Log out</span>
+          </button>
           <a className="admin-home-link" href="/">
             Visit public website
             <ArrowUpRight size={15} />
@@ -1142,14 +739,9 @@ function AdminDashboard() {
       <main className="admin-main">
         <header className="admin-topbar">
           <div className="admin-topbar-left">
-            <button
-              className="admin-menu-toggle"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-            >
+            <button className="admin-menu-toggle" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
               <Menu size={22} />
             </button>
-
             <div>
               <div className="admin-breadcrumb">
                 Administration <ChevronRight size={13} /> {activePage}
@@ -1157,20 +749,13 @@ function AdminDashboard() {
               <h1>{pageTitle}</h1>
             </div>
           </div>
-
           <div className="admin-topbar-right">
             <span className="admin-session-label">
               <span /> {CURRENT_ACADEMIC_YEAR} Academic Session
             </span>
-
-            <button
-              className="admin-notification"
-              aria-label="Notifications"
-              onClick={() => showNotice("You are all caught up.")}
-            >
+            <button className="admin-notification" aria-label="Notifications" onClick={() => showNotice("You are all caught up.")}>
               <Bell size={19} />
             </button>
-
             <div className="admin-profile">
               <div className="admin-avatar">A</div>
               <div>
@@ -1182,17 +767,16 @@ function AdminDashboard() {
         </header>
 
         <div className="admin-content">
+          {loading && (
+            <p style={{ padding: "12px 0", color: "#64748b" }}>Loading data from server...</p>
+          )}
+
           <div className="admin-welcome">
             <div>
               <p className="admin-eyebrow">O'LAK TRIUMPH SCHOOL</p>
-              <h2>
-                {activePage === "Overview"
-                  ? "Welcome to your dashboard"
-                  : `Manage ${activePage}`}
-              </h2>
+              <h2>{activePage === "Overview" ? "Welcome to your dashboard" : `Manage ${activePage}`}</h2>
               <p>{pageDescriptions[activePage]}</p>
             </div>
-
             <div className="admin-date-chip">
               <CalendarDays size={16} />
               {CURRENT_ACADEMIC_YEAR} Session
@@ -1212,7 +796,6 @@ function AdminDashboard() {
                       <span>{label}</span>
                       <strong>{value}</strong>
                     </div>
-                    <span className="admin-stat-caption">Preview data</span>
                   </div>
                 ))}
               </div>
@@ -1225,7 +808,6 @@ function AdminDashboard() {
                       <p>Shortcuts to common tasks</p>
                     </div>
                   </div>
-
                   <div className="admin-quick-actions">
                     {[
                       ["Add a student", Users, "Students", "blue"],
@@ -1233,11 +815,7 @@ function AdminDashboard() {
                       ["Enroll a student", UserPlus, "Enrollments", "green"],
                       ["Submit scores", ClipboardList, "Submit Scores", "purple"],
                     ].map(([label, Icon, page, color]) => (
-                      <button
-                        key={label}
-                        onClick={() => openPage(page)}
-                        className="admin-quick-action"
-                      >
+                      <button key={label} onClick={() => openPage(page)} className="admin-quick-action">
                         <span className={`admin-quick-icon ${color}`}>
                           <Icon size={19} />
                         </span>
@@ -1254,14 +832,10 @@ function AdminDashboard() {
                       <h3>Academic terms</h3>
                       <p>Current term status</p>
                     </div>
-                    <button
-                      className="admin-text-button"
-                      onClick={() => openPage("Academic Terms")}
-                    >
+                    <button className="admin-text-button" onClick={() => openPage("Academic Terms")}>
                       View all
                     </button>
                   </div>
-
                   <div className="admin-term-list">
                     {terms.slice(0, 3).map((term) => (
                       <div className="admin-term-row" key={term.id}>
@@ -1271,21 +845,11 @@ function AdminDashboard() {
                         <div className="admin-term-info">
                           <strong>{term.name}</strong>
                           <span>{term.session}</span>
-
                           <div className="admin-term-statuses">
-                            <span
-                              className={`admin-status ${
-                                term.isLocked ? "locked" : "open"
-                              }`}
-                            >
+                            <span className={`admin-status ${term.isLocked ? "locked" : "open"}`}>
                               {term.isLocked ? "Locked" : "Unlocked"}
                             </span>
-
-                            <span
-                              className={`admin-status ${
-                                term.isPublished ? "published" : "open"
-                              }`}
-                            >
+                            <span className={`admin-status ${term.isPublished ? "published" : "open"}`}>
                               {term.isPublished ? "Published" : "Unpublished"}
                             </span>
                           </div>
@@ -1302,19 +866,11 @@ function AdminDashboard() {
                     <h3>Recently added students</h3>
                     <p>Your latest student records</p>
                   </div>
-                  <button
-                    className="admin-text-button"
-                    onClick={() => openPage("Students")}
-                  >
+                  <button className="admin-text-button" onClick={() => openPage("Students")}>
                     View students
                   </button>
                 </div>
-
-                <StudentTable
-                  students={students.slice(-4).reverse()}
-                  onDelete={deleteStudent}
-                  compact
-                />
+                <StudentTable students={students.slice(-4).reverse()} onDelete={deleteStudent} compact />
               </section>
             </>
           )}
@@ -1330,7 +886,9 @@ function AdminDashboard() {
                 action={() => {
                   setStudentForm({
                     name: "",
-                    className: "JSS 1",
+                    admissionNumber: "",
+                    password: "",
+                    className: "JSS1",
                     department: "Science",
                     gender: "Female",
                   });
@@ -1338,28 +896,22 @@ function AdminDashboard() {
                 }}
                 actionLabel="Add student"
               />
-
               <ClassificationFilter
                 selectedClass={studentClass}
-                setSelectedClass={(value) => {
-                  setStudentClass(value);
+                setSelectedClass={(v) => {
+                  setStudentClass(v);
                   setStudentDepartment("Science");
                 }}
                 selectedDepartment={studentDepartment}
                 setSelectedDepartment={setStudentDepartment}
               />
-
               <p className="admin-classification-note">
                 Showing students in <strong>{studentClass}</strong>
                 {isSeniorClass(studentClass) && (
                   <> — <strong>{studentDepartment}</strong> Department</>
                 )}
               </p>
-
-              <StudentTable
-                students={visibleStudents}
-                onDelete={deleteStudent}
-              />
+              <StudentTable students={visibleStudents} onDelete={deleteStudent} />
             </section>
           )}
 
@@ -1372,34 +924,26 @@ function AdminDashboard() {
                 search={search}
                 setSearch={setSearch}
                 action={() => {
-                  setSubjectForm({
-                    name: "",
-                    code: "",
-                    className: "JSS 1",
-                    department: "Science",
-                  });
+                  setSubjectForm({ name: "", code: "", className: "JSS1", department: "Science" });
                   setModal("subject");
                 }}
                 actionLabel="Add subject"
               />
-
               <ClassificationFilter
                 selectedClass={subjectClass}
-                setSelectedClass={(value) => {
-                  setSubjectClass(value);
+                setSelectedClass={(v) => {
+                  setSubjectClass(v);
                   setSubjectDepartment("Science");
                 }}
                 selectedDepartment={subjectDepartment}
                 setSelectedDepartment={setSubjectDepartment}
               />
-
               <p className="admin-classification-note">
                 Showing subjects for <strong>{subjectClass}</strong>
                 {isSeniorClass(subjectClass) && (
                   <> — <strong>{subjectDepartment}</strong> Department</>
                 )}
               </p>
-
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
@@ -1424,10 +968,7 @@ function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-
-              {visibleSubjects.length === 0 && (
-                <EmptyState text="No subjects found for this class and department." />
-              )}
+              {visibleSubjects.length === 0 && <EmptyState text="No subjects found for this class and department." />}
             </section>
           )}
 
@@ -1436,21 +977,15 @@ function AdminDashboard() {
             <section className="admin-panel">
               <PanelHeading
                 title="Student enrollments"
-                subtitle={`${enrollments.length} enrollments in this preview`}
+                subtitle={`${enrollments.length} enrollments`}
                 search={search}
                 setSearch={setSearch}
                 action={() => {
-                  setEnrollmentForm({
-                    student: "",
-                    className: "JSS 1",
-                    department: "",
-                    term: "First Term",
-                  });
+                  setEnrollmentForm({ student: "", className: "JSS1", department: "", term: "First Term" });
                   setModal("enrollment");
                 }}
                 actionLabel="Enroll student"
               />
-
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
@@ -1464,14 +999,7 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered(enrollments, [
-                      "id",
-                      "student",
-                      "className",
-                      "department",
-                      "term",
-                      "session",
-                    ]).map((item) => (
+                    {filtered(enrollments, ["id", "student", "className", "department", "term", "session"]).map((item) => (
                       <tr key={item.id}>
                         <td className="admin-id">{item.id}</td>
                         <td><strong>{item.student}</strong></td>
@@ -1484,23 +1012,12 @@ function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-
               {enrollments.length === 0 && (
-                <EmptyState text="No student enrollments yet. You can enroll students individually or use Enroll All below." />
+                <EmptyState text="No enrollments yet. Enroll students individually or use Enroll All." />
               )}
-
               <div className="admin-enroll-all-footer">
-                <span>
-                  Enroll all {students.length} students in the student preview
-                  for First Term, {CURRENT_ACADEMIC_YEAR}.
-                </span>
-
-                <button
-                  type="button"
-                  className="admin-primary-button"
-                  onClick={enrollAllStudents}
-                  disabled={students.length === 0}
-                >
+                <span>Enroll all {students.length} students for First Term, {CURRENT_ACADEMIC_YEAR}.</span>
+                <button type="button" className="admin-primary-button" onClick={enrollAllStudents} disabled={students.length === 0}>
                   <UserPlus size={17} />
                   Enroll All
                 </button>
@@ -1533,40 +1050,29 @@ function AdminDashboard() {
                 }}
                 actionLabel="Submit score"
               />
-
               <ClassificationFilter
                 selectedClass={scoreClass}
-                setSelectedClass={(value) => {
-                  setScoreClass(value);
+                setSelectedClass={(v) => {
+                  setScoreClass(v);
                   setScoreDepartment("Science");
                 }}
                 selectedDepartment={scoreDepartment}
                 setSelectedDepartment={setScoreDepartment}
               />
-
               <p className="admin-classification-note">
                 Showing scores for <strong>{scoreClass}</strong>
                 {isSeniorClass(scoreClass) && (
                   <> — <strong>{scoreDepartment}</strong> Department</>
                 )}
               </p>
-
               <ScoreTable
                 scores={filtered(
                   scores.filter(
-                    (score) =>
-                      score.className === scoreClass &&
-                      (!isSeniorClass(scoreClass) ||
-                        score.department === scoreDepartment)
+                    (s) =>
+                      s.className === scoreClass &&
+                      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
                   ),
-                  [
-                    "studentName",
-                    "student",
-                    "subjectName",
-                    "subject",
-                    "term",
-                    "academicYear",
-                  ]
+                  ["studentName", "admissionNumber", "subjectName", "subjectCode", "term", "academicYear"]
                 )}
               />
             </section>
@@ -1581,38 +1087,27 @@ function AdminDashboard() {
                 search={search}
                 setSearch={setSearch}
               />
-
               <ClassificationFilter
                 selectedClass={resultClass}
-                setSelectedClass={(value) => {
-                  setResultClass(value);
+                setSelectedClass={(v) => {
+                  setResultClass(v);
                   setResultDepartment("Science");
                 }}
                 selectedDepartment={resultDepartment}
                 setSelectedDepartment={setResultDepartment}
               />
-
               <div className="admin-form-two admin-results-filters">
                 <FormField label="Academic term">
-                  <select
-                    value={resultTerm}
-                    onChange={(e) => setResultTerm(e.target.value)}
-                  >
+                  <select value={resultTerm} onChange={(e) => setResultTerm(e.target.value)}>
                     <option>First Term</option>
                     <option>Second Term</option>
                     <option>Third Term</option>
                   </select>
                 </FormField>
-
                 <FormField label="Academic year">
-                  <input
-                    value={resultAcademicYear}
-                    onChange={(e) => setResultAcademicYear(e.target.value)}
-                    placeholder="2026/2027"
-                  />
+                  <input value={resultAcademicYear} onChange={(e) => setResultAcademicYear(e.target.value)} placeholder="2025/2026" />
                 </FormField>
               </div>
-
               <p className="admin-classification-note">
                 Showing results for <strong>{resultClass}</strong>
                 {isSeniorClass(resultClass) && (
@@ -1620,36 +1115,26 @@ function AdminDashboard() {
                 )}
                 {" "}· {resultTerm}, {resultAcademicYear}
               </p>
-
               {groupedResults.length === 0 ? (
-                <EmptyState text="No student results found for this class, department, term and academic year." />
+                <EmptyState text="No student results found for this selection." />
               ) : (
                 <div className="admin-overall-results">
                   {groupedResults.map((result) => (
-                    <article
-                      className="admin-panel admin-student-result-card"
-                      key={`${result.studentId}-${result.term}-${result.academicYear}`}
-                    >
+                    <article className="admin-panel admin-student-result-card" key={`${result.studentId}-${result.term}-${result.academicYear}`}>
                       <div className="admin-panel-heading">
                         <div>
                           <h3>{result.studentName}</h3>
                           <p>
                             {result.studentId} · {result.className}
-                            {result.department
-                              ? ` · ${result.department}`
-                              : ""}
+                            {result.department ? ` · ${result.department}` : ""}
                           </p>
-                          <p>
-                            {result.term} · {result.academicYear}
-                          </p>
+                          <p>{result.term} · {result.academicYear}</p>
                         </div>
-
                         <div className="admin-result-average">
                           <span>Terminal average</span>
                           <strong>{result.average.toFixed(2)}%</strong>
                         </div>
                       </div>
-
                       <div className="admin-table-wrap">
                         <table className="admin-table">
                           <thead>
@@ -1666,7 +1151,6 @@ function AdminDashboard() {
                               <th>Remark</th>
                             </tr>
                           </thead>
-
                           <tbody>
                             {result.scores.map((score) => {
                               const ca =
@@ -1674,12 +1158,9 @@ function AdminDashboard() {
                                 Number(score.test2 || 0) +
                                 Number(score.test3 || 0) +
                                 Number(score.assignment || 0);
-
                               return (
                                 <tr key={score.id}>
-                                  <td>
-                                    <strong>{score.subjectName}</strong>
-                                  </td>
+                                  <td><strong>{score.subjectName}</strong></td>
                                   <td>{score.test1}</td>
                                   <td>{score.test2}</td>
                                   <td>{score.test3}</td>
@@ -1695,17 +1176,7 @@ function AdminDashboard() {
                           </tbody>
                         </table>
                       </div>
-
-                      {/* AUTOMATIC COMMENTS AND SUBJECT COUNT */}
-                      <div
-                        className="admin-result-comments"
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "14px",
-                          width: "100%",
-                        }}
-                      >
+                      <div className="admin-result-comments" style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
                         <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
                             <School size={18} />
@@ -1713,7 +1184,6 @@ function AdminDashboard() {
                           </div>
                           <p>{result.adminComment}</p>
                         </div>
-
                         <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
                             <GraduationCap size={18} />
@@ -1721,7 +1191,6 @@ function AdminDashboard() {
                           </div>
                           <p>{result.yearTutorComment}</p>
                         </div>
-
                         <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
                             <FileText size={18} />
@@ -1743,81 +1212,40 @@ function AdminDashboard() {
               <div className="admin-panel-heading">
                 <div>
                   <h3>Academic terms</h3>
-                  <p>
-                    Lock or unlock terms and independently publish or
-                    unpublish completed terms.
-                  </p>
+                  <p>Lock or unlock terms and independently publish or unpublish completed terms.</p>
                 </div>
               </div>
-
               <div className="admin-term-management">
                 {terms.map((term) => (
                   <div className="admin-term-card" key={term.id}>
                     <div className="admin-term-card-icon">
                       <CalendarDays size={22} />
                     </div>
-
                     <div className="admin-term-card-info">
                       <strong>{term.name}</strong>
                       <span>{term.session}</span>
-
                       <div className="admin-term-statuses">
-                        <span
-                          className={`admin-status ${
-                            term.isLocked ? "locked" : "open"
-                          }`}
-                        >
+                        <span className={`admin-status ${term.isLocked ? "locked" : "open"}`}>
                           {term.isLocked ? "Locked" : "Unlocked"}
                         </span>
-
-                        <span
-                          className={`admin-status ${
-                            term.isPublished ? "published" : "open"
-                          }`}
-                        >
+                        <span className={`admin-status ${term.isPublished ? "published" : "open"}`}>
                           {term.isPublished ? "Published" : "Unpublished"}
                         </span>
                       </div>
                     </div>
-
                     <div className="admin-term-actions">
-                      <button
-                        type="button"
-                        className="admin-secondary-button"
-                        onClick={() => toggleTerm(term.id)}
-                      >
-                        {term.isLocked ? (
-                          <Unlock size={15} />
-                        ) : (
-                          <Lock size={15} />
-                        )}
+                      <button type="button" className="admin-secondary-button" onClick={() => toggleTerm(term.id)}>
+                        {term.isLocked ? <Unlock size={15} /> : <Lock size={15} />}
                         {term.isLocked ? "Unlock" : "Lock"}
                       </button>
-
-                      <button
-                        type="button"
-                        className="admin-primary-button"
-                        onClick={() => publishTerm(term.id)}
-                      >
-                        {term.isPublished ? (
-                          <X size={15} />
-                        ) : (
-                          <CheckCircle2 size={15} />
-                        )}
+                      <button type="button" className="admin-primary-button" onClick={() => publishTerm(term.id)}>
+                        {term.isPublished ? <X size={15} /> : <CheckCircle2 size={15} />}
                         {term.isPublished ? "Unpublish" : "Publish"}
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <p className="admin-footnote">
-                <InfoIcon />
-                Locking and publishing are independent actions. Changes
-                in this preview are local only and are not saved to your
-                backend. Your shared controller currently exposes term
-                locking, but not term publishing.
-              </p>
             </section>
           )}
 
@@ -1830,27 +1258,23 @@ function AdminDashboard() {
                 search={search}
                 setSearch={setSearch}
               />
-
               <div className="admin-promotion-selection">
                 <div className="admin-classification-group">
                   <h4>1. Select current class</h4>
-
                   <ClassificationFilter
                     selectedClass={promotionClass}
-                    setSelectedClass={(value) => {
-                      setPromotionClass(value);
+                    setSelectedClass={(v) => {
+                      setPromotionClass(v);
                       setPromotionDepartment("Science");
-                      setDestinationClass(getNextClass(value));
+                      setDestinationClass(getNextClass(v));
                       setDestinationDepartment("Science");
                     }}
                     selectedDepartment={promotionDepartment}
                     setSelectedDepartment={setPromotionDepartment}
                   />
                 </div>
-
                 <div className="admin-classification-group">
                   <h4>2. Select destination class</h4>
-
                   <div className="admin-classification-controls">
                     <label className="admin-form-field">
                       <span>Destination class</span>
@@ -1861,27 +1285,17 @@ function AdminDashboard() {
                           setDestinationDepartment("Science");
                         }}
                       >
-                        {secondaryClasses.map((className) => (
-                          <option key={className} value={className}>
-                            {className}
-                          </option>
+                        {secondaryClasses.map((c) => (
+                          <option key={c} value={c}>{c}</option>
                         ))}
                       </select>
                     </label>
-
                     {isSeniorClass(destinationClass) && (
                       <label className="admin-form-field">
                         <span>Destination department</span>
-                        <select
-                          value={destinationDepartment}
-                          onChange={(e) =>
-                            setDestinationDepartment(e.target.value)
-                          }
-                        >
-                          {departments.map((department) => (
-                            <option key={department} value={department}>
-                              {department}
-                            </option>
+                        <select value={destinationDepartment} onChange={(e) => setDestinationDepartment(e.target.value)}>
+                          {departments.map((d) => (
+                            <option key={d} value={d}>{d}</option>
                           ))}
                         </select>
                       </label>
@@ -1889,7 +1303,6 @@ function AdminDashboard() {
                   </div>
                 </div>
               </div>
-
               <p className="admin-classification-note">
                 Students in <strong>{promotionClass}</strong>
                 {isSeniorClass(promotionClass) && (
@@ -1900,7 +1313,6 @@ function AdminDashboard() {
                   <> — <strong>{destinationDepartment}</strong> Department</>
                 )}.
               </p>
-
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
@@ -1913,35 +1325,20 @@ function AdminDashboard() {
                       <th>Action</th>
                     </tr>
                   </thead>
-
                   <tbody>
-                    {filtered(promotionStudents, [
-                      "id",
-                      "name",
-                      "className",
-                      "department",
-                    ]).map((student) => (
+                    {filtered(promotionStudents, ["id", "name", "className", "department"]).map((student) => (
                       <tr key={student.id}>
-                        <td className="admin-id">{student.id}</td>
+                        <td className="admin-id">{student.admissionNumber || student.id}</td>
                         <td><strong>{student.name}</strong></td>
                         <td>{student.className}</td>
                         <td>{student.department || "—"}</td>
                         <td>
-                          <span
-                            className={`admin-status ${
-                              student.status === "Promoted"
-                                ? "published"
-                                : "open"
-                            }`}
-                          >
+                          <span className={`admin-status ${student.status === "Promoted" ? "published" : "open"}`}>
                             {student.status}
                           </span>
                         </td>
                         <td>
-                          <button
-                            className="admin-table-action"
-                            onClick={() => promoteStudent(student.id)}
-                          >
+                          <button className="admin-table-action" onClick={() => promoteStudent(student.id)}>
                             <TrendingUp size={15} />
                             Promote
                           </button>
@@ -1951,16 +1348,7 @@ function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-
-              {promotionStudents.length === 0 && (
-                <EmptyState text="No students found in this class and department." />
-              )}
-
-              <p className="admin-footnote">
-                <InfoIcon />
-                Promotions in this preview update local state only.
-                They are not saved to your backend.
-              </p>
+              {promotionStudents.length === 0 && <EmptyState text="No students found in this class and department." />}
             </section>
           )}
 
@@ -1971,7 +1359,6 @@ function AdminDashboard() {
         </div>
       </main>
 
-      {/* NOTIFICATION */}
       {notice && (
         <div className="admin-toast">
           <CheckCircle2 size={18} />
@@ -1981,12 +1368,7 @@ function AdminDashboard() {
 
       {/* MODALS */}
       {modal && (
-        <div
-          className="admin-modal-backdrop"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setModal("")
-          }
-        >
+        <div className="admin-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setModal("")}>
           <div className="admin-modal">
             <div className="admin-modal-heading">
               <div>
@@ -2001,340 +1383,135 @@ function AdminDashboard() {
                     : "Submit a score"}
                 </h3>
               </div>
-
-              <button
-                onClick={() => setModal("")}
-                aria-label="Close"
-              >
+              <button onClick={() => setModal("")} aria-label="Close">
                 <X size={20} />
               </button>
             </div>
 
-            {/* ADD STUDENT */}
             {modal === "student" && (
               <form onSubmit={addStudent}>
                 <FormField label="Student full name">
-                  <input
-                    required
-                    value={studentForm.name}
-                    onChange={(e) =>
-                      setStudentForm({
-                        ...studentForm,
-                        name: e.target.value,
-                      })
-                    }
-                    placeholder="Enter student's full name"
-                  />
+                  <input required value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} placeholder="Enter student's full name" />
                 </FormField>
-
+                <FormField label="Admission number">
+                  <input required value={studentForm.admissionNumber} onChange={(e) => setStudentForm({ ...studentForm, admissionNumber: e.target.value })} placeholder="e.g. OTS/2025/001" />
+                </FormField>
+                <FormField label="Password">
+                  <input required type="password" value={studentForm.password} onChange={(e) => setStudentForm({ ...studentForm, password: e.target.value })} placeholder="Set login password" />
+                </FormField>
                 <FormField label="Class">
-                  <select
-                    required
-                    value={studentForm.className}
-                    onChange={(e) =>
-                      setStudentForm({
-                        ...studentForm,
-                        className: e.target.value,
-                        department: "Science",
-                      })
-                    }
-                  >
-                    {secondaryClasses.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
+                  <select required value={studentForm.className} onChange={(e) => setStudentForm({ ...studentForm, className: e.target.value, department: "Science" })}>
+                    {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </FormField>
-
                 {isSeniorClass(studentForm.className) && (
                   <FormField label="Department">
-                    <select
-                      required
-                      value={studentForm.department}
-                      onChange={(e) =>
-                        setStudentForm({
-                          ...studentForm,
-                          department: e.target.value,
-                        })
-                      }
-                    >
-                      {departments.map((department) => (
-                        <option key={department} value={department}>
-                          {department}
-                        </option>
-                      ))}
+                    <select required value={studentForm.department} onChange={(e) => setStudentForm({ ...studentForm, department: e.target.value })}>
+                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </FormField>
                 )}
-
                 <FormField label="Gender">
-                  <select
-                    value={studentForm.gender}
-                    onChange={(e) =>
-                      setStudentForm({
-                        ...studentForm,
-                        gender: e.target.value,
-                      })
-                    }
-                  >
+                  <select value={studentForm.gender} onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value })}>
                     <option>Female</option>
                     <option>Male</option>
                   </select>
                 </FormField>
-
                 <ModalActions onCancel={() => setModal("")} />
               </form>
             )}
 
-            {/* ADD SUBJECT */}
             {modal === "subject" && (
               <form onSubmit={addSubject}>
                 <FormField label="Subject name">
-                  <input
-                    required
-                    value={subjectForm.name}
-                    onChange={(e) =>
-                      setSubjectForm({
-                        ...subjectForm,
-                        name: e.target.value,
-                      })
-                    }
-                    placeholder="e.g. Mathematics"
-                  />
+                  <input required value={subjectForm.name} onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })} placeholder="e.g. Mathematics" />
                 </FormField>
-
                 <FormField label="Subject code">
-                  <input
-                    required
-                    value={subjectForm.code}
-                    onChange={(e) =>
-                      setSubjectForm({
-                        ...subjectForm,
-                        code: e.target.value.toUpperCase(),
-                      })
-                    }
-                    placeholder="e.g. MTH"
-                  />
+                  <input required value={subjectForm.code} onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value.toUpperCase() })} placeholder="e.g. MTH" />
                 </FormField>
-
                 <FormField label="Class">
-                  <select
-                    required
-                    value={subjectForm.className}
-                    onChange={(e) =>
-                      setSubjectForm({
-                        ...subjectForm,
-                        className: e.target.value,
-                        department: "Science",
-                      })
-                    }
-                  >
-                    {secondaryClasses.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
+                  <select required value={subjectForm.className} onChange={(e) => setSubjectForm({ ...subjectForm, className: e.target.value, department: "Science" })}>
+                    {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </FormField>
-
                 {isSeniorClass(subjectForm.className) && (
                   <FormField label="Department">
-                    <select
-                      required
-                      value={subjectForm.department}
-                      onChange={(e) =>
-                        setSubjectForm({
-                          ...subjectForm,
-                          department: e.target.value,
-                        })
-                      }
-                    >
-                      {departments.map((department) => (
-                        <option key={department} value={department}>
-                          {department}
-                        </option>
-                      ))}
+                    <select required value={subjectForm.department} onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}>
+                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </FormField>
                 )}
-
                 <ModalActions onCancel={() => setModal("")} />
               </form>
             )}
 
-            {/* ENROLL STUDENT */}
             {modal === "enrollment" && (
               <form onSubmit={addEnrollment}>
                 <FormField label="Student full name">
-                  <input
-                    type="text"
-                    required
-                    autoComplete="off"
-                    value={enrollmentForm.student}
-                    onChange={(e) =>
-                      setEnrollmentForm({
-                        ...enrollmentForm,
-                        student: e.target.value,
-                      })
-                    }
-                    placeholder="Enter student's full name"
-                  />
+                  <input required value={enrollmentForm.student} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, student: e.target.value })} placeholder="Enter student's full name" />
                 </FormField>
-
                 <FormField label="Class">
-                  <select
-                    required
-                    value={enrollmentForm.className}
-                    onChange={(e) =>
-                      setEnrollmentForm({
-                        ...enrollmentForm,
-                        className: e.target.value,
-                        department: "",
-                      })
-                    }
-                  >
-                    {enrollmentClassOptions.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
+                  <select required value={enrollmentForm.className} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, className: e.target.value, department: "" })}>
+                    {enrollmentClassOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </FormField>
-
                 {isSeniorClass(enrollmentForm.className) && (
                   <FormField label="Department">
-                    <select
-                      required
-                      value={enrollmentForm.department}
-                      onChange={(e) =>
-                        setEnrollmentForm({
-                          ...enrollmentForm,
-                          department: e.target.value,
-                        })
-                      }
-                    >
+                    <select required value={enrollmentForm.department} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, department: e.target.value })}>
                       <option value="">Select department</option>
-                      {departments.map((department) => (
-                        <option key={department} value={department}>
-                          {department}
-                        </option>
-                      ))}
+                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </FormField>
                 )}
-
                 <FormField label="Term">
-                  <select
-                    value={enrollmentForm.term}
-                    onChange={(e) =>
-                      setEnrollmentForm({
-                        ...enrollmentForm,
-                        term: e.target.value,
-                      })
-                    }
-                  >
+                  <select value={enrollmentForm.term} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, term: e.target.value })}>
                     <option>First Term</option>
                     <option>Second Term</option>
                     <option>Third Term</option>
                   </select>
                 </FormField>
-
-                <ModalActions
-                  onCancel={() => setModal("")}
-                  submitLabel="Enroll student"
-                />
+                <ModalActions onCancel={() => setModal("")} submitLabel="Enroll student" />
               </form>
             )}
 
-            {/* SUBMIT SCORE */}
             {modal === "score" && (
               <form onSubmit={addScore}>
                 <div className="admin-score-class-summary">
                   <strong>{scoreClass}</strong>
-                  {isSeniorClass(scoreClass) && (
-                    <span>{scoreDepartment} Department</span>
-                  )}
+                  {isSeniorClass(scoreClass) && <span>{scoreDepartment} Department</span>}
                 </div>
-
                 <FormField label="Student">
-                  <select
-                    required
-                    value={scoreForm.student}
-                    onChange={(e) =>
-                      setScoreForm({
-                        ...scoreForm,
-                        student: e.target.value,
-                      })
-                    }
-                  >
+                  <select required value={scoreForm.student} onChange={(e) => setScoreForm({ ...scoreForm, student: e.target.value })}>
                     <option value="">Select a student</option>
-                    {scoreStudents.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.name} ({student.id})
-                      </option>
+                    {scoreStudents.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.admissionNumber})</option>
                     ))}
                   </select>
                 </FormField>
-
                 <FormField label="Subject">
-                  <select
-                    required
-                    value={scoreForm.subject}
-                    onChange={(e) =>
-                      setScoreForm({
-                        ...scoreForm,
-                        subject: e.target.value,
-                      })
-                    }
-                  >
+                  <select required value={scoreForm.subject} onChange={(e) => setScoreForm({ ...scoreForm, subject: e.target.value })}>
                     <option value="">Select a subject</option>
-                    {scoreSubjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>
-                        {subject.name} ({subject.code})
-                      </option>
+                    {scoreSubjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                     ))}
                   </select>
                 </FormField>
-
                 <div className="admin-form-two">
                   <FormField label="Academic term">
-                    <select
-                      required
-                      value={scoreForm.term}
-                      onChange={(e) =>
-                        setScoreForm({
-                          ...scoreForm,
-                          term: e.target.value,
-                        })
-                      }
-                    >
+                    <select required value={scoreForm.term} onChange={(e) => setScoreForm({ ...scoreForm, term: e.target.value })}>
                       <option>First Term</option>
                       <option>Second Term</option>
                       <option>Third Term</option>
                     </select>
                   </FormField>
-
                   <FormField label="Academic year">
-                    <input
-                      required
-                      value={scoreForm.academicYear}
-                      onChange={(e) =>
-                        setScoreForm({
-                          ...scoreForm,
-                          academicYear: e.target.value,
-                        })
-                      }
-                      placeholder="2026/2027"
-                    />
+                    <input required value={scoreForm.academicYear} onChange={(e) => setScoreForm({ ...scoreForm, academicYear: e.target.value })} placeholder="2025/2026" />
                   </FormField>
                 </div>
-
                 <div className="admin-score-section-heading">
                   <strong>CONTINUOUS ASSESSMENT</strong>
                   <span>Maximum: 40 marks</span>
                 </div>
-
                 <div className="admin-form-two">
                   {[
                     ["test1", "First test (0–10)"],
@@ -2343,106 +1520,31 @@ function AdminDashboard() {
                     ["assignment", "Assignment (0–10)"],
                   ].map(([field, label]) => (
                     <FormField label={label} key={field}>
-                      <input
-                        required
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.01"
-                        value={scoreForm[field]}
-                        onChange={(e) =>
-                          setScoreForm({
-                            ...scoreForm,
-                            [field]: e.target.value,
-                          })
-                        }
-                      />
+                      <input required type="number" min="0" max="10" step="0.01" value={scoreForm[field]} onChange={(e) => setScoreForm({ ...scoreForm, [field]: e.target.value })} />
                     </FormField>
                   ))}
                 </div>
-
                 <div className="admin-score-section-heading">
                   <strong>EXAMINATION</strong>
                   <span>Maximum: 60 marks</span>
                 </div>
-
                 <FormField label="Examination score (0–60)">
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    max="60"
-                    step="0.01"
-                    value={scoreForm.exam}
-                    onChange={(e) =>
-                      setScoreForm({
-                        ...scoreForm,
-                        exam: e.target.value,
-                      })
-                    }
-                  />
+                  <input required type="number" min="0" max="60" step="0.01" value={scoreForm.exam} onChange={(e) => setScoreForm({ ...scoreForm, exam: e.target.value })} />
                 </FormField>
-
                 <FormField label="Manual class position (optional)">
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={scoreForm.noInClass}
-                    onChange={(e) =>
-                      setScoreForm({
-                        ...scoreForm,
-                        noInClass: e.target.value,
-                      })
-                    }
-                    placeholder="Enter position if manually assigned"
-                  />
+                  <input type="number" min="1" step="1" value={scoreForm.noInClass} onChange={(e) => setScoreForm({ ...scoreForm, noInClass: e.target.value })} placeholder="Enter position if manually assigned" />
                 </FormField>
-
                 <div className="admin-score-calculation">
-                  <div>
-                    <span>Continuous assessment</span>
-                    <strong>{scoreCA.toFixed(2)} / 40</strong>
-                  </div>
-
-                  <div>
-                    <span>Total score</span>
-                    <strong>{scoreTotal.toFixed(2)} / 100</strong>
-                  </div>
-
+                  <div><span>Continuous assessment</span><strong>{scoreCA.toFixed(2)} / 40</strong></div>
+                  <div><span>Total score</span><strong>{scoreTotal.toFixed(2)} / 100</strong></div>
                   {liveGrade && (
                     <>
-                      <div>
-                        <span>Calculated grade</span>
-                        <strong>{liveGrade.grade}</strong>
-                      </div>
-
-                      <div>
-                        <span>Subject remark</span>
-                        <strong>{liveGrade.remark}</strong>
-                      </div>
+                      <div><span>Calculated grade</span><strong>{liveGrade.grade}</strong></div>
+                      <div><span>Subject remark</span><strong>{liveGrade.remark}</strong></div>
                     </>
                   )}
                 </div>
-
-                {scoreStudents.length === 0 && (
-                  <p className="admin-footnote">
-                    No students are currently registered in this class
-                    and department.
-                  </p>
-                )}
-
-                {scoreSubjects.length === 0 && (
-                  <p className="admin-footnote">
-                    No subjects are currently assigned to this class
-                    and department.
-                  </p>
-                )}
-
-                <ModalActions
-                  onCancel={() => setModal("")}
-                  submitLabel="Save score"
-                />
+                <ModalActions onCancel={() => setModal("")} submitLabel="Save score" />
               </form>
             )}
           </div>
@@ -2452,41 +1554,20 @@ function AdminDashboard() {
   );
 }
 
-// CLASS AND DEPARTMENT FILTER
-function ClassificationFilter({
-  selectedClass,
-  setSelectedClass,
-  selectedDepartment,
-  setSelectedDepartment,
-}) {
+function ClassificationFilter({ selectedClass, setSelectedClass, selectedDepartment, setSelectedDepartment }) {
   return (
     <div className="admin-classification-controls">
       <label className="admin-form-field">
         <span>Select class</span>
-        <select
-          value={selectedClass}
-          onChange={(e) => setSelectedClass(e.target.value)}
-        >
-          {secondaryClasses.map((className) => (
-            <option key={className} value={className}>
-              {className}
-            </option>
-          ))}
+        <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
+          {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </label>
-
       {isSeniorClass(selectedClass) && (
         <label className="admin-form-field">
           <span>Select department</span>
-          <select
-            value={selectedDepartment}
-            onChange={(e) => setSelectedDepartment(e.target.value)}
-          >
-            {departments.map((department) => (
-              <option key={department} value={department}>
-                {department}
-              </option>
-            ))}
+          <select value={selectedDepartment} onChange={(e) => setSelectedDepartment(e.target.value)}>
+            {departments.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </label>
       )}
@@ -2494,34 +1575,20 @@ function ClassificationFilter({
   );
 }
 
-// PANEL HEADING
-function PanelHeading({
-  title,
-  subtitle,
-  search,
-  setSearch,
-  action,
-  actionLabel,
-}) {
+function PanelHeading({ title, subtitle, search, setSearch, action, actionLabel }) {
   return (
     <div className="admin-panel-heading admin-panel-heading-wrap">
       <div>
         <h3>{title}</h3>
         <p>{subtitle}</p>
       </div>
-
       <div className="admin-panel-tools">
         {typeof search === "string" && (
           <div className="admin-search">
             <Search size={16} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search records..."
-            />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records..." />
           </div>
         )}
-
         {action && (
           <button className="admin-primary-button" onClick={action}>
             <Plus size={17} />
@@ -2533,20 +1600,14 @@ function PanelHeading({
   );
 }
 
-// STUDENT TABLE
 function StudentTable({ students, onDelete, compact }) {
-  if (!students.length) {
-    return (
-      <EmptyState text="No student records found for this class and department." />
-    );
-  }
-
+  if (!students.length) return <EmptyState text="No student records found for this class and department." />;
   return (
     <div className="admin-table-wrap">
       <table className="admin-table">
         <thead>
           <tr>
-            <th>Student ID</th>
+            <th>Admission No.</th>
             <th>Student name</th>
             <th>Class</th>
             <th>Department</th>
@@ -2555,32 +1616,22 @@ function StudentTable({ students, onDelete, compact }) {
             {!compact && <th>Action</th>}
           </tr>
         </thead>
-
         <tbody>
           {students.map((student) => (
             <tr key={student.id}>
-              <td className="admin-id">{student.id}</td>
+              <td className="admin-id">{student.admissionNumber || student.id}</td>
               <td><strong>{student.name}</strong></td>
               <td>{student.className}</td>
               <td>{student.department || "—"}</td>
               <td>{student.gender}</td>
               <td>
-                <span
-                  className={`admin-status ${
-                    student.status === "Promoted" ? "published" : "open"
-                  }`}
-                >
+                <span className={`admin-status ${student.status === "Promoted" ? "published" : "open"}`}>
                   {student.status}
                 </span>
               </td>
-
               {!compact && (
                 <td>
-                  <button
-                    className="admin-icon-action danger"
-                    title="Remove from local preview"
-                    onClick={() => onDelete(student.id)}
-                  >
+                  <button className="admin-icon-action danger" title="Delete student" onClick={() => onDelete(student.id)}>
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -2593,12 +1644,8 @@ function StudentTable({ students, onDelete, compact }) {
   );
 }
 
-// SCORE TABLE
 function ScoreTable({ scores }) {
-  if (!scores.length) {
-    return <EmptyState text="No score records found for this selection." />;
-  }
-
+  if (!scores.length) return <EmptyState text="No score records found for this selection." />;
   return (
     <div className="admin-table-wrap">
       <table className="admin-table">
@@ -2619,7 +1666,6 @@ function ScoreTable({ scores }) {
             <th>Remark</th>
           </tr>
         </thead>
-
         <tbody>
           {scores.map((score) => {
             const ca =
@@ -2627,12 +1673,9 @@ function ScoreTable({ scores }) {
               Number(score.test2 || 0) +
               Number(score.test3 || 0) +
               Number(score.assignment || 0);
-
             return (
               <tr key={score.id}>
-                <td>
-                  <strong>{score.studentName || score.student}</strong>
-                </td>
+                <td><strong>{score.studentName || score.student}</strong></td>
                 <td>{score.subjectName || score.subject}</td>
                 <td>{score.term}</td>
                 <td>{score.academicYear}</td>
@@ -2654,7 +1697,6 @@ function ScoreTable({ scores }) {
   );
 }
 
-// FORM FIELD
 function FormField({ label, children }) {
   return (
     <label className="admin-form-field">
@@ -2664,29 +1706,15 @@ function FormField({ label, children }) {
   );
 }
 
-// MODAL ACTIONS
-function ModalActions({
-  onCancel,
-  submitLabel = "Save record",
-}) {
+function ModalActions({ onCancel, submitLabel = "Save record" }) {
   return (
     <div className="admin-modal-actions">
-      <button
-        type="button"
-        className="admin-secondary-button"
-        onClick={onCancel}
-      >
-        Cancel
-      </button>
-
-      <button type="submit" className="admin-primary-button">
-        {submitLabel}
-      </button>
+      <button type="button" className="admin-secondary-button" onClick={onCancel}>Cancel</button>
+      <button type="submit" className="admin-primary-button">{submitLabel}</button>
     </div>
   );
 }
 
-// EMPTY STATE
 function EmptyState({ text }) {
   return (
     <div className="admin-empty">
@@ -2694,10 +1722,6 @@ function EmptyState({ text }) {
       <p>{text}</p>
     </div>
   );
-}
-
-function InfoIcon() {
-  return <Eye size={15} />;
 }
 
 export default AdminDashboard;
