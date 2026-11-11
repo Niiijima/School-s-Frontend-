@@ -819,3 +819,39 @@
     break-inside: avoid;
   }
 }
+/* Student profile name */
+.profile-identity h2 {
+  color: var(--student-purple);
+}
+
+/* Result headings */
+.result-page-heading h1,
+.result-table-panel .section-heading h2 {
+  color: var(--student-purple);
+}
+
+/* Result table headings */
+.result-table th {
+  color: var(--student-purple);
+}
+
+/* Subject names */
+.result-table tbody tr:not(.result-summary-row) td:first-child {
+  color: var(--student-purple);
+  font-weight: 600;
+}
+
+/* Terminal average */
+.result-average strong {
+  color: var(--student-purple);
+}
+
+/* School logo */
+.student-brand-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+  border-radius: 8px;
+}

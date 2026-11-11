@@ -1852,3 +1852,31 @@
     padding: 14px;
   }
 }
+.admin-student-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-created-admission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid #d9c5f2;
+  border-radius: 12px;
+  background: #f8f2ff;
+}
+
+.admin-created-admission h3 {
+  color: #7c3aed;
+  margin: 8px 0 0;
+  letter-spacing: 1px;
+}
+
+.admin-created-admission p {
+  margin: 5px 0;
+}

@@ -1,8 +1,12 @@
+
 import React, { useEffect, useState } from "react";
 import jsPDF from "jspdf";
 import api from "../api/axios";
 import { logout } from "../api/auth";
 import "./StudentDashboard.css";
+import schoolLogo from "../assets/logo.jpeg";
+
+const CURRENT_ACADEMIC_YEAR = "2025/2026";
 
 // ====================== HELPERS ======================
 
@@ -111,7 +115,7 @@ function getAutomaticAdminComment(averageScore) {
 }
 
 function initials(name = "") {
-  return name
+  return String(name)
     .split(" ")
     .map((part) => part[0])
     .filter(Boolean)
@@ -143,64 +147,194 @@ function formatDate(value) {
   }
 }
 
-// Normalize academic profile from backend into term keys
+// ====================== PDF IMAGE HELPER ======================
+
+// Loads an image and converts it to PNG data that jsPDF can embed.
+// If an image cannot be loaded, the PDF will still be generated.
+async function loadImageForPDF(imageUrl, baseUrl = window.location.origin) {
+  if (!imageUrl || typeof imageUrl !== "string") return null;
+
+  let objectUrl = null;
+
+  try {
+    const resolvedUrl = /^(https?:|data:|blob:)/i.test(imageUrl)
+      ? imageUrl
+      : new URL(imageUrl, baseUrl).href;
+
+    let imageSource = resolvedUrl;
+
+    // Fetch normal URLs as blobs so the image can be converted to PNG.
+    if (!/^(data:|blob:)/i.test(resolvedUrl)) {
+      const response = await fetch(resolvedUrl, {
+        credentials: "same-origin",
+        mode: "cors",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Image request failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      objectUrl = URL.createObjectURL(blob);
+      imageSource = objectUrl;
+    }
+
+    const image = new Image();
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("Image could not be decoded."));
+      image.src = imageSource;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Could not create image canvas.");
+    }
+
+    context.drawImage(image, 0, 0);
+
+    return canvas.toDataURL("image/png");
+  } catch (error) {
+    console.error("Unable to load PDF image:", imageUrl, error);
+    return null;
+  } finally {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+}
+
+// Combines the separate term responses into one reportCardSummary.
+function mergeTermAcademicResponses(responses) {
+  const mergedSubjects = new Map();
+
+  responses.forEach(({ data, term }) => {
+    if (!data || !Array.isArray(data.reportCardSummary)) return;
+
+    data.reportCardSummary.forEach((subject) => {
+      const subjectKey =
+        subject.subjectCode ||
+        subject.subjectName ||
+        subject._id ||
+        subject.name;
+
+      if (!subjectKey) return;
+
+      if (!mergedSubjects.has(subjectKey)) {
+        mergedSubjects.set(subjectKey, {
+          subjectName: subject.subjectName || subject.name || "Subject",
+          subjectCode: subject.subjectCode || "",
+        });
+      }
+
+      const existing = mergedSubjects.get(subjectKey);
+
+      if (subject.firstTerm) existing.firstTerm = subject.firstTerm;
+      if (subject.secondTerm) existing.secondTerm = subject.secondTerm;
+      if (subject.thirdTerm) existing.thirdTerm = subject.thirdTerm;
+
+      const termKey = {
+        "First Term": "firstTerm",
+        "Second Term": "secondTerm",
+        "Third Term": "thirdTerm",
+      }[term];
+
+      if (termKey && subject[termKey]) {
+        existing[termKey] = subject[termKey];
+      }
+    });
+  });
+
+  const firstResponse = responses.find((item) => item.data)?.data;
+
+  return {
+    academicYear:
+      firstResponse?.academicYear || CURRENT_ACADEMIC_YEAR,
+    reportCardSummary: Array.from(mergedSubjects.values()),
+    termResponses: responses,
+    classSize:
+      firstResponse?.classSize ||
+      firstResponse?.noInClass ||
+      firstResponse?.studentsInClass,
+  };
+}
+
 function buildTermResults(academic) {
-  if (!academic) {
+  const empty = {
+    first: {
+      label: "First Term Result",
+      uploaded: false,
+      subjects: [],
+      term: "First Term",
+      academicYear: CURRENT_ACADEMIC_YEAR,
+    },
+    second: {
+      label: "Second Term Result",
+      uploaded: false,
+      subjects: [],
+      term: "Second Term",
+      academicYear: CURRENT_ACADEMIC_YEAR,
+    },
+    third: {
+      label: "Third Term / Annual Report",
+      uploaded: false,
+      subjects: [],
+      term: "Third Term",
+      academicYear: CURRENT_ACADEMIC_YEAR,
+    },
+  };
+
+  if (!academic) return empty;
+
+  const reportSubjects = academic.reportCardSummary || [];
+
+  if (reportSubjects.length > 0) {
+    const getTermSubjects = (termKey) =>
+      reportSubjects
+        .filter((subject) => subject[termKey])
+        .map((subject) => ({
+          ...subject[termKey],
+          name: subject.subjectName,
+          subjectName: subject.subjectName,
+          subjectCode: subject.subjectCode,
+        }));
+
+    const firstSubjects = getTermSubjects("firstTerm");
+    const secondSubjects = getTermSubjects("secondTerm");
+    const thirdSubjects = getTermSubjects("thirdTerm");
+
     return {
-      first: { label: "First Term Result", uploaded: false, subjects: [] },
-      second: { label: "Second Term Result", uploaded: false, subjects: [] },
+      first: {
+        label: "First Term Result",
+        uploaded: firstSubjects.length > 0,
+        academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+        term: "First Term",
+        subjects: firstSubjects,
+      },
+      second: {
+        label: "Second Term Result",
+        uploaded: secondSubjects.length > 0,
+        academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+        term: "Second Term",
+        subjects: secondSubjects,
+      },
       third: {
         label: "Third Term / Annual Report",
-        uploaded: false,
-        subjects: [],
+        uploaded: thirdSubjects.length > 0,
+        academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+        term: "Third Term",
+        subjects: thirdSubjects,
       },
     };
   }
 
-  const pick = (keys) => {
-    for (const key of keys) {
-      if (academic[key]) return academic[key];
-      if (academic.terms?.[key]) return academic.terms[key];
-    }
-    return null;
-  };
-
-  const first = pick(["firstTerm", "First Term", "first"]);
-  const second = pick(["secondTerm", "Second Term", "second"]);
-  const third = pick(["thirdTerm", "Third Term", "third"]);
-
-  const toResult = (raw, label, termName) => {
-    if (!raw) {
-      return {
-        label,
-        uploaded: false,
-        academicYear: academic.academicYear || "—",
-        term: termName,
-        subjects: [],
-      };
-    }
-
-    const subjects = raw.subjects || raw.scores || [];
-    const uploaded =
-      raw.uploaded === true ||
-      raw.isPublished === true ||
-      subjects.length > 0;
-
-    return {
-      label,
-      uploaded,
-      academicYear: raw.academicYear || academic.academicYear || "—",
-      term: termName,
-      subjects,
-      average: raw.average || raw.terminalAverage,
-    };
-  };
-
-  return {
-    first: toResult(first, "First Term Result", "First Term"),
-    second: toResult(second, "Second Term Result", "Second Term"),
-    third: toResult(third, "Third Term / Annual Report", "Third Term"),
-  };
+  return empty;
 }
 
 // ====================== HEADER ======================
@@ -209,7 +343,12 @@ function StudentHeader({ student, academicYear }) {
   return (
     <header className="student-header">
       <div className="student-brand">
-        <div className="student-brand-mark">OT</div>
+        <img
+          className="student-brand-logo"
+          src={schoolLogo}
+          alt="O'lak Triumph School logo"
+        />
+
         <div>
           <strong>O'lak Triumph School</strong>
           <span>Student Portal</span>
@@ -218,7 +357,7 @@ function StudentHeader({ student, academicYear }) {
 
       <div className="student-header-right">
         <span className="student-session">
-          {academicYear || "Current"} Academic Session
+          {academicYear || CURRENT_ACADEMIC_YEAR} Academic Session
         </span>
 
         <div className="student-mini-avatar">
@@ -330,20 +469,73 @@ function PerformanceGraph({ performance = [] }) {
 
 // ====================== PDF DOWNLOAD ======================
 
-function downloadResultPDF(student, result, studentsInClass = "—") {
+async function downloadResultPDF(student, result, studentsInClass = "—") {
   const pdf = new jsPDF();
   const pageWidth = pdf.internal.pageSize.getWidth();
   const summary = getResultSummary(result, student.currentClass);
   const adminComment = getAutomaticAdminComment(summary.terminalAverage);
-  const yearTutorComment = getAutomaticYearTutorComment(summary.terminalAverage);
+  const yearTutorComment = getAutomaticYearTutorComment(
+    summary.terminalAverage
+  );
 
+  // Resolve the backend's origin for profile-image URLs.
+  let backendOrigin = window.location.origin;
+
+  try {
+    if (api.defaults.baseURL) {
+      backendOrigin = new URL(
+        api.defaults.baseURL,
+        window.location.origin
+      ).origin;
+    }
+  } catch (error) {
+    console.warn("Could not resolve API base URL:", error);
+  }
+
+  // Load the school logo and student photo together.
+  const [logoData, profileImageData] = await Promise.all([
+    loadImageForPDF(schoolLogo, window.location.origin),
+    loadImageForPDF(student.profileImage, backendOrigin),
+  ]);
+
+  // Add school logo to the top-left corner.
+  if (logoData) {
+    try {
+      pdf.addImage(logoData, "PNG", 16, 8, 21, 21);
+    } catch (error) {
+      console.warn("Could not embed school logo:", error);
+    }
+  }
+
+  // Add student profile picture to the top-right corner.
+  if (profileImageData) {
+    try {
+      pdf.addImage(
+        profileImageData,
+        "PNG",
+        pageWidth - 37,
+        8,
+        21,
+        21
+      );
+    } catch (error) {
+      console.warn("Could not embed student profile picture:", error);
+    }
+  }
+
+  // School heading.
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(18);
-  pdf.text("O'lak Triumph School", pageWidth / 2, 20, { align: "center" });
+  pdf.text("O'lak Triumph School", pageWidth / 2, 20, {
+    align: "center",
+  });
 
   pdf.setFontSize(13);
-  pdf.text(result.term + " Result", pageWidth / 2, 30, { align: "center" });
+  pdf.text(result.term + " Result", pageWidth / 2, 30, {
+    align: "center",
+  });
 
+  // Student details.
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
 
@@ -359,6 +551,7 @@ function downloadResultPDF(student, result, studentsInClass = "—") {
     pdf.text(line, 16, 43 + index * 7);
   });
 
+  // Subject table.
   let y = 84;
 
   pdf.setFont("helvetica", "bold");
@@ -375,10 +568,12 @@ function downloadResultPDF(student, result, studentsInClass = "—") {
 
   summary.subjects.forEach((subject) => {
     y += 10;
+
     if (y > 260) {
       pdf.addPage();
       y = 20;
     }
+
     pdf.text(String(subject.name).slice(0, 28), 16, y);
     pdf.text(String(subject.ca), 83, y);
     pdf.text(String(subject.exam), 99, y);
@@ -387,7 +582,9 @@ function downloadResultPDF(student, result, studentsInClass = "—") {
     pdf.text(String(subject.remark || "").slice(0, 18), 160, y);
   });
 
+  // Result summary.
   y += 10;
+
   if (y > 230) {
     pdf.addPage();
     y = 20;
@@ -396,27 +593,48 @@ function downloadResultPDF(student, result, studentsInClass = "—") {
   pdf.line(16, y - 5, pageWidth - 16, y - 5);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9);
+
   pdf.text(`Total: ${summary.totalPercentage.toFixed(2)}%`, 16, y);
   y += 9;
+
   pdf.text(`Subjects Offered: ${summary.subjectsOffered}`, 16, y);
   y += 12;
+
   pdf.setFontSize(11);
-  pdf.text(`Terminal Average: ${summary.terminalAverage.toFixed(2)}%`, 16, y);
+  pdf.text(
+    `Terminal Average: ${summary.terminalAverage.toFixed(2)}%`,
+    16,
+    y
+  );
   y += 12;
 
+  // Admin's comment.
   pdf.setFontSize(9);
   pdf.text("Admin's Comment", 16, y);
   y += 6;
+
   pdf.setFont("helvetica", "normal");
-  const adminLines = pdf.splitTextToSize(adminComment, pageWidth - 32);
+
+  const adminLines = pdf.splitTextToSize(
+    adminComment,
+    pageWidth - 32
+  );
+
   pdf.text(adminLines, 16, y);
   y += adminLines.length * 5 + 8;
 
+  // Year tutor's comment.
   pdf.setFont("helvetica", "bold");
   pdf.text("Year Tutor's Comment", 16, y);
   y += 6;
+
   pdf.setFont("helvetica", "normal");
-  const tutorLines = pdf.splitTextToSize(yearTutorComment, pageWidth - 32);
+
+  const tutorLines = pdf.splitTextToSize(
+    yearTutorComment,
+    pageWidth - 32
+  );
+
   pdf.text(tutorLines, 16, y);
   y += tutorLines.length * 5 + 8;
 
@@ -424,7 +642,10 @@ function downloadResultPDF(student, result, studentsInClass = "—") {
   pdf.text(`Subjects Recorded: ${summary.subjectsOffered}`, 16, y);
 
   pdf.save(
-    `${student.admissionNumber}-${String(result.term).replaceAll(" ", "-")}.pdf`
+    `${student.admissionNumber}-${String(result.term).replaceAll(
+      " ",
+      "-"
+    )}.pdf`
   );
 }
 
@@ -469,7 +690,9 @@ function ProfilePage({ student, results, performance, academicYear }) {
             <p>{student.admissionNumber}</p>
             <span className="profile-status">
               <i />
-              {(student.status || "Active").replace(/^\w/, (c) => c.toUpperCase())}{" "}
+              {(student.status || "Active").replace(/^\w/, (c) =>
+                c.toUpperCase()
+              )}{" "}
               Student
             </span>
           </div>
@@ -518,7 +741,9 @@ function ProfilePage({ student, results, performance, academicYear }) {
                     : "Yet to be uploaded"}
                 </small>
               </span>
-              <span className="term-arrow">{result.uploaded ? "→" : "—"}</span>
+              <span className="term-arrow">
+                {result.uploaded ? "→" : "—"}
+              </span>
             </button>
           ))}
         </div>
@@ -541,7 +766,9 @@ function ProfilePage({ student, results, performance, academicYear }) {
         <div>
           <p className="eyebrow">SCHOOL RECORD</p>
           <h2>Attendance</h2>
-          <p>Attendance records will be available here in a future update.</p>
+          <p>
+            Attendance records will be available here in a future update.
+          </p>
         </div>
         <button className="secondary-button" type="button" disabled>
           Coming later
@@ -578,7 +805,9 @@ function ResultPage({ term, student, results, studentsInClass }) {
 
   const summary = getResultSummary(result, student.currentClass);
   const adminComment = getAutomaticAdminComment(summary.terminalAverage);
-  const yearTutorComment = getAutomaticYearTutorComment(summary.terminalAverage);
+  const yearTutorComment = getAutomaticYearTutorComment(
+    summary.terminalAverage
+  );
 
   return (
     <main className="student-main">
@@ -599,7 +828,9 @@ function ResultPage({ term, student, results, studentsInClass }) {
 
         <button
           className="primary-button"
-          onClick={() => downloadResultPDF(student, result, studentsInClass)}
+          onClick={() =>
+            downloadResultPDF(student, result, studentsInClass)
+          }
           type="button"
         >
           ↓ Download PDF
@@ -664,7 +895,9 @@ function ResultPage({ term, student, results, studentsInClass }) {
                   <strong>Total</strong>
                 </td>
                 <td>
-                  <strong>{summary.totalPercentage.toFixed(2)}%</strong>
+                  <strong>
+                    {summary.totalPercentage.toFixed(2)}%
+                  </strong>
                 </td>
                 <td colSpan="2" />
               </tr>
@@ -719,6 +952,7 @@ export default function StudentDashboard() {
   const currentPath = window.location.pathname;
   const resultPrefix = "/student/results/";
   const isResultPage = currentPath.startsWith(resultPrefix);
+
   const term = isResultPage
     ? currentPath.slice(resultPrefix.length).replace(/\/+$/, "")
     : null;
@@ -726,24 +960,43 @@ export default function StudentDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 1. My profile
-        // Prefer /students/me — fall back to stored user if needed
-        let me;
-        try {
-          const meRes = await api.get("/students/me");
-          me = meRes.data.student || meRes.data;
-        } catch {
-          const stored = localStorage.getItem("user");
-          me = stored ? JSON.parse(stored) : null;
+        // 1. Fetch the authenticated student's profile.
+        const profileRes = await api.get("/students/profile/me", {
+          params: {
+            academicYear: CURRENT_ACADEMIC_YEAR,
+          },
+        });
+
+        console.log("STUDENT PROFILE RESPONSE:", profileRes.data);
+
+        // Backend returns { profile: {...} }.
+        const me = profileRes.data?.profile;
+
+        if (!me) {
+          throw new Error(
+            "Student profile was not returned by the server."
+          );
         }
 
-        if (!me) throw new Error("Profile not found");
+        // The backend profile uses id, not necessarily _id.
+        const id = me.id || me._id;
 
-        setStudent({
-          id: me._id || me.id,
-          name: me.name,
-          admissionNumber: me.admissionNumber,
-          currentClass: me.currentClass || me.className,
+        if (!id) {
+          throw new Error(
+            "Student ID was not returned by the profile endpoint."
+          );
+        }
+
+        const studentName =
+          me.name ||
+          `${me.firstName || ""} ${me.surname || ""}`.trim() ||
+          "Student";
+
+        const studentData = {
+          id,
+          name: studentName,
+          admissionNumber: me.admissionNumber || "—",
+          currentClass: me.currentClass || me.className || "",
           department: me.department || "",
           gender: me.gender,
           dateOfBirth: me.dateOfBirth,
@@ -754,21 +1007,71 @@ export default function StudentDashboard() {
           email: me.email,
           profileImage: me.profileImage || "",
           status: me.status || "active",
-        });
+        };
 
-        // 2. Academic profile / results
-        const id = me._id || me.id;
-        try {
-          const academicRes = await api.get(
-            `/grades/student/${id}/academic-profile`
+        setStudent(studentData);
+
+        // 2. Request each term separately.
+        const terms = ["First Term", "Second Term", "Third Term"];
+
+        const termResponses = await Promise.all(
+          terms.map(async (termName) => {
+            try {
+              const response = await api.get(
+                `/grades/student/${id}/academic-profile`,
+                {
+                  params: {
+                    academicYear: CURRENT_ACADEMIC_YEAR,
+                    term: termName,
+                  },
+                }
+              );
+
+              console.log(
+                `STUDENT ${termName.toUpperCase()} RESPONSE:`,
+                response.data
+              );
+
+              return {
+                term: termName,
+                data: response.data,
+              };
+            } catch (termError) {
+              console.error(
+                `STUDENT ${termName.toUpperCase()} ERROR:`,
+                termError.response?.data || termError.message
+              );
+
+              // One unpublished term should not prevent other terms
+              // from appearing.
+              return {
+                term: termName,
+                data: null,
+              };
+            }
+          })
+        );
+
+        const successfulResponses = termResponses.filter(
+          (item) => item.data
+        );
+
+        if (successfulResponses.length > 0) {
+          const mergedAcademic =
+            mergeTermAcademicResponses(successfulResponses);
+
+          console.log(
+            "MERGED STUDENT ACADEMIC DATA:",
+            mergedAcademic
           );
-          setAcademic(academicRes.data);
-        } catch {
-          // Optional: try alternate endpoint if your backend uses a different path
+
+          setAcademic(mergedAcademic);
+        } else {
           setAcademic(null);
         }
       } catch (err) {
-        console.error(err);
+        console.error("STUDENT DASHBOARD ERROR:", err);
+
         setError(
           err.response?.data?.message ||
             err.message ||
@@ -796,7 +1099,10 @@ export default function StudentDashboard() {
     return (
       <div className="student-app">
         <div style={{ padding: 48, textAlign: "center" }}>
-          <p style={{ marginBottom: 16 }}>{error || "Profile not found"}</p>
+          <p style={{ marginBottom: 16 }}>
+            {error || "Profile not found"}
+          </p>
+
           <button
             className="primary-button"
             type="button"
@@ -813,19 +1119,39 @@ export default function StudentDashboard() {
   }
 
   const results = buildTermResults(academic);
+
   const studentsInClass =
-    academic?.classSize || academic?.noInClass || academic?.studentsInClass || "—";
+    academic?.classSize ||
+    academic?.noInClass ||
+    academic?.studentsInClass ||
+    "—";
 
   const performance = [];
+
   ["first", "second", "third"].forEach((key, index) => {
-    const r = results[key];
-    if (r?.uploaded) {
-      const summary = getResultSummary(r, student.currentClass);
-      const score =
-        Number(r.average || r.terminalAverage || summary.terminalAverage || 0);
+    const result = results[key];
+
+    if (result?.uploaded) {
+      const summary = getResultSummary(
+        result,
+        student.currentClass
+      );
+
+      const score = Number(
+        result.average ||
+          result.terminalAverage ||
+          summary.terminalAverage ||
+          0
+      );
+
       if (score > 0) {
         performance.push({
-          term: index === 0 ? "First" : index === 1 ? "Second" : "Third",
+          term:
+            index === 0
+              ? "First"
+              : index === 1
+                ? "Second"
+                : "Third",
           score: Number(score.toFixed(1)),
         });
       }
@@ -836,7 +1162,9 @@ export default function StudentDashboard() {
     <div className="student-app">
       <StudentHeader
         student={student}
-        academicYear={academic?.academicYear}
+        academicYear={
+          academic?.academicYear || CURRENT_ACADEMIC_YEAR
+        }
       />
 
       {isResultPage ? (
@@ -851,7 +1179,9 @@ export default function StudentDashboard() {
           student={student}
           results={results}
           performance={performance}
-          academicYear={academic?.academicYear}
+          academicYear={
+            academic?.academicYear || CURRENT_ACADEMIC_YEAR
+          }
         />
       )}
 

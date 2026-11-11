@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
-import { loginAdmin } from "../api/auth";
-import schoolLogo from "../assets/logo.jpeg";
+import { loginAdmin } from "../../api/auth";
+import schoolLogo from "../../assets/logo.jpeg";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");

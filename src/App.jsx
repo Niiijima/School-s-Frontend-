@@ -13,9 +13,9 @@ import slide10 from "./assets/10.jpeg";
 import slide11 from "./assets/11.jpeg";
 import founderPhoto from "./assets/PT.jpeg";
 
-import AdminDashboard from "./AdminDashboard";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
-import AdminLogin from "./pages/AdminLogin";
+import AdminLogin from "./pages/admin/AdminLogin";
 import StudentLogin from "./pages/studentlogin";
 
 import {
