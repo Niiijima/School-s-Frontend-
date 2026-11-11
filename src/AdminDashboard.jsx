@@ -21,7 +21,6 @@ import {
   ChevronRight,
   Lock,
   Unlock,
-  Eye,
   Trash2,
   CheckCircle2,
   School,
@@ -36,6 +35,9 @@ const juniorClasses = ["JSS1", "JSS2", "JSS3"];
 const seniorClasses = ["SS1", "SS2", "SS3"];
 const secondaryClasses = [...juniorClasses, ...seniorClasses];
 const enrollmentClassOptions = [...secondaryClasses];
+
+// "All" is only used for filtering lists, not for creating records
+const filterClassOptions = ["All", ...secondaryClasses];
 
 const CURRENT_ACADEMIC_YEAR = "2025/2026";
 
@@ -115,20 +117,23 @@ function getStudentSection(className) {
 function normalizeStudent(s) {
   return {
     id: s._id || s.id,
-    name: s.name,
-    admissionNumber: s.admissionNumber || s.id,
-    className: s.currentClass || s.className,
+    name: s.name || "",
+    admissionNumber: s.admissionNumber || "",
+    className: s.currentClass || s.className || "",
     department: s.department || "",
     gender: s.gender || "",
     status: s.status || "active",
+    profileImage: s.profileImage || "",
+    guardianName: s.guardianName || "",
+    guardianPhone: s.guardianPhone || "",
   };
 }
 
 function normalizeSubject(s) {
   return {
     id: s._id || s.id,
-    name: s.name,
-    code: s.code || s.subjectCode,
+    name: s.name || "",
+    code: s.code || s.subjectCode || "",
     className: s.className || s.currentClass || "",
     department: s.department || "",
   };
@@ -153,9 +158,10 @@ function AdminDashboard() {
   const [modal, setModal] = useState("");
   const [notice, setNotice] = useState("");
 
-  const [studentClass, setStudentClass] = useState("JSS1");
+  // Default "All" so every student is visible on first load
+  const [studentClass, setStudentClass] = useState("All");
   const [studentDepartment, setStudentDepartment] = useState("Science");
-  const [subjectClass, setSubjectClass] = useState("JSS1");
+  const [subjectClass, setSubjectClass] = useState("All");
   const [subjectDepartment, setSubjectDepartment] = useState("Science");
   const [scoreClass, setScoreClass] = useState("JSS1");
   const [scoreDepartment, setScoreDepartment] = useState("Science");
@@ -215,21 +221,33 @@ function AdminDashboard() {
     setSidebarOpen(false);
   };
 
+  // ========== FIXED DATA LOADING ==========
   const loadData = async () => {
     try {
       setLoading(true);
+
       const [studentsRes, subjectsRes] = await Promise.all([
         api.get("/students"),
         api.get("/subjects").catch(() => ({ data: [] })),
       ]);
 
-      const studentList = studentsRes.data.students || studentsRes.data || [];
-      const subjectList = subjectsRes.data.subjects || subjectsRes.data || [];
+      // Backend returns a plain array of students
+      const rawStudents = studentsRes.data;
+      const studentList = Array.isArray(rawStudents)
+        ? rawStudents
+        : rawStudents?.students || rawStudents?.data || [];
+
+      const rawSubjects = subjectsRes.data;
+      const subjectList = Array.isArray(rawSubjects)
+        ? rawSubjects
+        : rawSubjects?.subjects || rawSubjects?.data || [];
 
       setStudents(studentList.map(normalizeStudent));
       setSubjects(subjectList.map(normalizeSubject));
     } catch (err) {
+      console.error("Load error:", err);
       showNotice(err.response?.data?.message || "Failed to load data from server.");
+      setStudents([]);
     } finally {
       setLoading(false);
     }
@@ -310,7 +328,6 @@ function AdminDashboard() {
       setSubjectForm({ name: "", code: "", className: "JSS1", department: "Science" });
       await loadData();
     } catch (err) {
-      // Fallback local if subjects endpoint is not ready
       setSubjects((current) => [
         ...current,
         {
@@ -424,7 +441,11 @@ function AdminDashboard() {
 
       const gradeResult = calculateGrade(
         getStudentSection(selectedStudent.className),
-        test1, test2, test3, assignment, exam
+        test1,
+        test2,
+        test3,
+        assignment,
+        exam
       );
 
       setScores((current) => [
@@ -449,7 +470,11 @@ function AdminDashboard() {
           department: selectedStudent.department || "",
           term: scoreForm.term,
           academicYear: scoreForm.academicYear.trim(),
-          test1, test2, test3, assignment, exam,
+          test1,
+          test2,
+          test3,
+          assignment,
+          exam,
           totalScore: gradeResult.totalScore,
           grade: gradeResult.grade,
           remark: gradeResult.remark,
@@ -490,7 +515,6 @@ function AdminDashboard() {
       );
       showNotice(`Term ${term.isLocked ? "unlocked" : "locked"} successfully.`);
     } catch (err) {
-      // local fallback
       setTerms((current) =>
         current.map((t) => (t.id === id ? { ...t, isLocked: !t.isLocked } : t))
       );
@@ -522,7 +546,6 @@ function AdminDashboard() {
       showNotice("Student promoted successfully.");
       await loadData();
     } catch (err) {
-      // local fallback
       setStudents((current) =>
         current.map((s) =>
           s.id === id
@@ -557,52 +580,51 @@ function AdminDashboard() {
 
   // ====================== DERIVED DATA ======================
 
+  const matchesClassFilter = (itemClass, itemDept, selectedClass, selectedDept) => {
+    if (selectedClass === "All") return true;
+    if (itemClass !== selectedClass) return false;
+    if (isSeniorClass(selectedClass) && itemDept !== selectedDept) return false;
+    return true;
+  };
+
   const visibleStudents = filtered(
-    students.filter(
-      (s) =>
-        s.className === studentClass &&
-        (!isSeniorClass(studentClass) || s.department === studentDepartment)
+    students.filter((s) =>
+      matchesClassFilter(s.className, s.department, studentClass, studentDepartment)
     ),
     ["id", "name", "admissionNumber", "className", "department", "gender"]
   );
 
   const visibleSubjects = filtered(
-    subjects.filter(
-      (s) =>
-        s.className === subjectClass &&
-        (!isSeniorClass(subjectClass) || s.department === subjectDepartment)
+    subjects.filter((s) =>
+      matchesClassFilter(s.className, s.department, subjectClass, subjectDepartment)
     ),
     ["id", "name", "code", "className", "department"]
   );
 
-  const scoreStudents = students.filter(
-    (s) =>
-      s.className === scoreClass &&
-      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
+  const scoreStudents = students.filter((s) =>
+    matchesClassFilter(s.className, s.department, scoreClass, scoreDepartment)
   );
 
-  const scoreSubjects = subjects.filter(
-    (s) =>
-      s.className === scoreClass &&
-      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
+  const scoreSubjects = subjects.filter((s) =>
+    matchesClassFilter(s.className, s.department, scoreClass, scoreDepartment)
   );
 
-  const promotionStudents = students.filter(
-    (s) =>
-      s.className === promotionClass &&
-      (!isSeniorClass(promotionClass) || s.department === promotionDepartment)
+  const promotionStudents = students.filter((s) =>
+    matchesClassFilter(s.className, s.department, promotionClass, promotionDepartment)
   );
 
   const classResultScores = scores.filter(
     (s) =>
-      s.className === resultClass &&
-      (!isSeniorClass(resultClass) || s.department === resultDepartment) &&
+      matchesClassFilter(s.className, s.department, resultClass, resultDepartment) &&
       s.term === resultTerm &&
       s.academicYear === resultAcademicYear
   );
 
   const visibleResultScores = filtered(classResultScores, [
-    "studentName", "admissionNumber", "subjectName", "subjectCode",
+    "studentName",
+    "admissionNumber",
+    "subjectName",
+    "subjectCode",
   ]);
 
   const groupedResults = Object.values(
@@ -725,7 +747,19 @@ function AdminDashboard() {
               <span>Administrator workspace</span>
             </div>
           </div>
-          <button className="admin-logout" onClick={handleLogout} style={{ border: 0, background: "transparent", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            className="admin-logout"
+            onClick={handleLogout}
+            style={{
+              border: 0,
+              background: "transparent",
+              cursor: "pointer",
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             <LogOut size={18} />
             <span>Log out</span>
           </button>
@@ -753,7 +787,11 @@ function AdminDashboard() {
             <span className="admin-session-label">
               <span /> {CURRENT_ACADEMIC_YEAR} Academic Session
             </span>
-            <button className="admin-notification" aria-label="Notifications" onClick={() => showNotice("You are all caught up.")}>
+            <button
+              className="admin-notification"
+              aria-label="Notifications"
+              onClick={() => showNotice("You are all caught up.")}
+            >
               <Bell size={19} />
             </button>
             <div className="admin-profile">
@@ -774,7 +812,11 @@ function AdminDashboard() {
           <div className="admin-welcome">
             <div>
               <p className="admin-eyebrow">O'LAK TRIUMPH SCHOOL</p>
-              <h2>{activePage === "Overview" ? "Welcome to your dashboard" : `Manage ${activePage}`}</h2>
+              <h2>
+                {activePage === "Overview"
+                  ? "Welcome to your dashboard"
+                  : `Manage ${activePage}`}
+              </h2>
               <p>{pageDescriptions[activePage]}</p>
             </div>
             <div className="admin-date-chip">
@@ -839,39 +881,18 @@ function AdminDashboard() {
                   <div className="admin-term-list">
                     {terms.slice(0, 3).map((term) => (
                       <div className="admin-term-row" key={term.id}>
-                        <div className="admin-term-icon">
-                          <CalendarDays size={18} />
-                        </div>
-                        <div className="admin-term-info">
+                        <div>
                           <strong>{term.name}</strong>
                           <span>{term.session}</span>
-                          <div className="admin-term-statuses">
-                            <span className={`admin-status ${term.isLocked ? "locked" : "open"}`}>
-                              {term.isLocked ? "Locked" : "Unlocked"}
-                            </span>
-                            <span className={`admin-status ${term.isPublished ? "published" : "open"}`}>
-                              {term.isPublished ? "Published" : "Unpublished"}
-                            </span>
-                          </div>
                         </div>
+                        <span className={`admin-status ${term.isLocked ? "locked" : "open"}`}>
+                          {term.isLocked ? "Locked" : "Open"}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </section>
               </div>
-
-              <section className="admin-panel admin-recent-panel">
-                <div className="admin-panel-heading">
-                  <div>
-                    <h3>Recently added students</h3>
-                    <p>Your latest student records</p>
-                  </div>
-                  <button className="admin-text-button" onClick={() => openPage("Students")}>
-                    View students
-                  </button>
-                </div>
-                <StudentTable students={students.slice(-4).reverse()} onDelete={deleteStudent} compact />
-              </section>
             </>
           )}
 
@@ -879,21 +900,11 @@ function AdminDashboard() {
           {activePage === "Students" && (
             <section className="admin-panel">
               <PanelHeading
-                title="Student records"
-                subtitle={`${visibleStudents.length} students in this selection`}
+                title="Students"
+                subtitle="All secondary-school students by class (no A/B/C arms)."
                 search={search}
                 setSearch={setSearch}
-                action={() => {
-                  setStudentForm({
-                    name: "",
-                    admissionNumber: "",
-                    password: "",
-                    className: "JSS1",
-                    department: "Science",
-                    gender: "Female",
-                  });
-                  setModal("student");
-                }}
+                action={() => setModal("student")}
                 actionLabel="Add student"
               />
               <ClassificationFilter
@@ -904,12 +915,21 @@ function AdminDashboard() {
                 }}
                 selectedDepartment={studentDepartment}
                 setSelectedDepartment={setStudentDepartment}
+                allowAll
               />
               <p className="admin-classification-note">
-                Showing students in <strong>{studentClass}</strong>
-                {isSeniorClass(studentClass) && (
-                  <> — <strong>{studentDepartment}</strong> Department</>
+                Showing{" "}
+                <strong>
+                  {studentClass === "All" ? "all classes" : studentClass}
+                </strong>
+                {studentClass !== "All" && isSeniorClass(studentClass) && (
+                  <>
+                    {" "}
+                    — <strong>{studentDepartment}</strong> Department
+                  </>
                 )}
+                {" · "}
+                {visibleStudents.length} student(s)
               </p>
               <StudentTable students={visibleStudents} onDelete={deleteStudent} />
             </section>
@@ -919,14 +939,11 @@ function AdminDashboard() {
           {activePage === "Subjects" && (
             <section className="admin-panel">
               <PanelHeading
-                title="Subject records"
-                subtitle={`${visibleSubjects.length} subjects in this selection`}
+                title="Subjects"
+                subtitle="Subjects organised by class and department."
                 search={search}
                 setSearch={setSearch}
-                action={() => {
-                  setSubjectForm({ name: "", code: "", className: "JSS1", department: "Science" });
-                  setModal("subject");
-                }}
+                action={() => setModal("subject")}
                 actionLabel="Add subject"
               />
               <ClassificationFilter
@@ -937,20 +954,14 @@ function AdminDashboard() {
                 }}
                 selectedDepartment={subjectDepartment}
                 setSelectedDepartment={setSubjectDepartment}
+                allowAll
               />
-              <p className="admin-classification-note">
-                Showing subjects for <strong>{subjectClass}</strong>
-                {isSeniorClass(subjectClass) && (
-                  <> — <strong>{subjectDepartment}</strong> Department</>
-                )}
-              </p>
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>Subject ID</th>
-                      <th>Subject name</th>
                       <th>Code</th>
+                      <th>Subject</th>
                       <th>Class</th>
                       <th>Department</th>
                     </tr>
@@ -958,9 +969,10 @@ function AdminDashboard() {
                   <tbody>
                     {visibleSubjects.map((subject) => (
                       <tr key={subject.id}>
-                        <td className="admin-id">{subject.id}</td>
-                        <td><strong>{subject.name}</strong></td>
-                        <td>{subject.code}</td>
+                        <td className="admin-id">{subject.code}</td>
+                        <td>
+                          <strong>{subject.name}</strong>
+                        </td>
                         <td>{subject.className}</td>
                         <td>{subject.department || "—"}</td>
                       </tr>
@@ -968,7 +980,9 @@ function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-              {visibleSubjects.length === 0 && <EmptyState text="No subjects found for this class and department." />}
+              {visibleSubjects.length === 0 && (
+                <EmptyState text="No subjects found for this selection." />
+              )}
             </section>
           )}
 
@@ -976,21 +990,22 @@ function AdminDashboard() {
           {activePage === "Enrollments" && (
             <section className="admin-panel">
               <PanelHeading
-                title="Student enrollments"
-                subtitle={`${enrollments.length} enrollments`}
+                title="Enrollments"
+                subtitle="Class and term enrollments."
                 search={search}
                 setSearch={setSearch}
-                action={() => {
-                  setEnrollmentForm({ student: "", className: "JSS1", department: "", term: "First Term" });
-                  setModal("enrollment");
-                }}
+                action={() => setModal("enrollment")}
                 actionLabel="Enroll student"
               />
+              <div style={{ marginBottom: 16 }}>
+                <button className="admin-secondary-button" onClick={enrollAllStudents}>
+                  Enroll all students (preview)
+                </button>
+              </div>
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>Enrollment ID</th>
                       <th>Student</th>
                       <th>Class</th>
                       <th>Department</th>
@@ -999,29 +1014,23 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered(enrollments, ["id", "student", "className", "department", "term", "session"]).map((item) => (
-                      <tr key={item.id}>
-                        <td className="admin-id">{item.id}</td>
-                        <td><strong>{item.student}</strong></td>
-                        <td>{item.className}</td>
-                        <td>{item.department || "—"}</td>
-                        <td>{item.term}</td>
-                        <td>{item.session}</td>
+                    {filtered(enrollments, ["student", "className", "department"]).map((e) => (
+                      <tr key={e.id}>
+                        <td>
+                          <strong>{e.student}</strong>
+                        </td>
+                        <td>{e.className}</td>
+                        <td>{e.department || "—"}</td>
+                        <td>{e.term}</td>
+                        <td>{e.session}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               {enrollments.length === 0 && (
-                <EmptyState text="No enrollments yet. Enroll students individually or use Enroll All." />
+                <EmptyState text="No enrollments yet." />
               )}
-              <div className="admin-enroll-all-footer">
-                <span>Enroll all {students.length} students for First Term, {CURRENT_ACADEMIC_YEAR}.</span>
-                <button type="button" className="admin-primary-button" onClick={enrollAllStudents} disabled={students.length === 0}>
-                  <UserPlus size={17} />
-                  Enroll All
-                </button>
-              </div>
             </section>
           )}
 
@@ -1029,26 +1038,12 @@ function AdminDashboard() {
           {activePage === "Submit Scores" && (
             <section className="admin-panel">
               <PanelHeading
-                title="Score records"
-                subtitle="Continuous assessment: 40 marks | Examination: 60 marks"
+                title="Submit scores"
+                subtitle="Record CA and exam scores by class."
                 search={search}
                 setSearch={setSearch}
-                action={() => {
-                  setScoreForm({
-                    student: "",
-                    subject: "",
-                    test1: "",
-                    test2: "",
-                    test3: "",
-                    assignment: "",
-                    exam: "",
-                    term: "First Term",
-                    academicYear: CURRENT_ACADEMIC_YEAR,
-                    noInClass: "",
-                  });
-                  setModal("score");
-                }}
-                actionLabel="Submit score"
+                action={() => setModal("score")}
+                actionLabel="Add score"
               />
               <ClassificationFilter
                 selectedClass={scoreClass}
@@ -1059,20 +1054,12 @@ function AdminDashboard() {
                 selectedDepartment={scoreDepartment}
                 setSelectedDepartment={setScoreDepartment}
               />
-              <p className="admin-classification-note">
-                Showing scores for <strong>{scoreClass}</strong>
-                {isSeniorClass(scoreClass) && (
-                  <> — <strong>{scoreDepartment}</strong> Department</>
-                )}
-              </p>
               <ScoreTable
                 scores={filtered(
-                  scores.filter(
-                    (s) =>
-                      s.className === scoreClass &&
-                      (!isSeniorClass(scoreClass) || s.department === scoreDepartment)
+                  scores.filter((s) =>
+                    matchesClassFilter(s.className, s.department, scoreClass, scoreDepartment)
                   ),
-                  ["studentName", "admissionNumber", "subjectName", "subjectCode", "term", "academicYear"]
+                  ["studentName", "subjectName", "admissionNumber"]
                 )}
               />
             </section>
@@ -1105,22 +1092,33 @@ function AdminDashboard() {
                   </select>
                 </FormField>
                 <FormField label="Academic year">
-                  <input value={resultAcademicYear} onChange={(e) => setResultAcademicYear(e.target.value)} placeholder="2025/2026" />
+                  <input
+                    value={resultAcademicYear}
+                    onChange={(e) => setResultAcademicYear(e.target.value)}
+                    placeholder="2025/2026"
+                  />
                 </FormField>
               </div>
               <p className="admin-classification-note">
                 Showing results for <strong>{resultClass}</strong>
                 {isSeniorClass(resultClass) && (
-                  <> — <strong>{resultDepartment}</strong> Department</>
+                  <>
+                    {" "}
+                    — <strong>{resultDepartment}</strong> Department
+                  </>
                 )}
-                {" "}· {resultTerm}, {resultAcademicYear}
+                {" · "}
+                {resultTerm}, {resultAcademicYear}
               </p>
               {groupedResults.length === 0 ? (
                 <EmptyState text="No student results found for this selection." />
               ) : (
                 <div className="admin-overall-results">
                   {groupedResults.map((result) => (
-                    <article className="admin-panel admin-student-result-card" key={`${result.studentId}-${result.term}-${result.academicYear}`}>
+                    <article
+                      className="admin-panel admin-student-result-card"
+                      key={`${result.studentId}-${result.term}-${result.academicYear}`}
+                    >
                       <div className="admin-panel-heading">
                         <div>
                           <h3>{result.studentName}</h3>
@@ -1128,7 +1126,9 @@ function AdminDashboard() {
                             {result.studentId} · {result.className}
                             {result.department ? ` · ${result.department}` : ""}
                           </p>
-                          <p>{result.term} · {result.academicYear}</p>
+                          <p>
+                            {result.term} · {result.academicYear}
+                          </p>
                         </div>
                         <div className="admin-result-average">
                           <span>Terminal average</span>
@@ -1160,15 +1160,21 @@ function AdminDashboard() {
                                 Number(score.assignment || 0);
                               return (
                                 <tr key={score.id}>
-                                  <td><strong>{score.subjectName}</strong></td>
+                                  <td>
+                                    <strong>{score.subjectName}</strong>
+                                  </td>
                                   <td>{score.test1}</td>
                                   <td>{score.test2}</td>
                                   <td>{score.test3}</td>
                                   <td>{score.assignment}</td>
                                   <td>{ca}</td>
                                   <td>{score.exam}</td>
-                                  <td><strong>{score.totalScore}</strong></td>
-                                  <td><strong>{score.grade}</strong></td>
+                                  <td>
+                                    <strong>{score.totalScore}</strong>
+                                  </td>
+                                  <td>
+                                    <strong>{score.grade}</strong>
+                                  </td>
                                   <td>{score.remark}</td>
                                 </tr>
                               );
@@ -1176,7 +1182,10 @@ function AdminDashboard() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="admin-result-comments" style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
+                      <div
+                        className="admin-result-comments"
+                        style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}
+                      >
                         <div style={{ width: "100%" }}>
                           <div className="admin-result-comment-heading">
                             <School size={18} />
@@ -1212,7 +1221,7 @@ function AdminDashboard() {
               <div className="admin-panel-heading">
                 <div>
                   <h3>Academic terms</h3>
-                  <p>Lock or unlock terms and independently publish or unpublish completed terms.</p>
+                  <p>Lock or unlock terms and publish or unpublish completed terms.</p>
                 </div>
               </div>
               <div className="admin-term-management">
@@ -1234,11 +1243,19 @@ function AdminDashboard() {
                       </div>
                     </div>
                     <div className="admin-term-actions">
-                      <button type="button" className="admin-secondary-button" onClick={() => toggleTerm(term.id)}>
+                      <button
+                        type="button"
+                        className="admin-secondary-button"
+                        onClick={() => toggleTerm(term.id)}
+                      >
                         {term.isLocked ? <Unlock size={15} /> : <Lock size={15} />}
                         {term.isLocked ? "Unlock" : "Lock"}
                       </button>
-                      <button type="button" className="admin-primary-button" onClick={() => publishTerm(term.id)}>
+                      <button
+                        type="button"
+                        className="admin-primary-button"
+                        onClick={() => publishTerm(term.id)}
+                      >
                         {term.isPublished ? <X size={15} /> : <CheckCircle2 size={15} />}
                         {term.isPublished ? "Unpublish" : "Publish"}
                       </button>
@@ -1286,16 +1303,23 @@ function AdminDashboard() {
                         }}
                       >
                         {secondaryClasses.map((c) => (
-                          <option key={c} value={c}>{c}</option>
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
                         ))}
                       </select>
                     </label>
                     {isSeniorClass(destinationClass) && (
                       <label className="admin-form-field">
                         <span>Destination department</span>
-                        <select value={destinationDepartment} onChange={(e) => setDestinationDepartment(e.target.value)}>
+                        <select
+                          value={destinationDepartment}
+                          onChange={(e) => setDestinationDepartment(e.target.value)}
+                        >
                           {departments.map((d) => (
-                            <option key={d} value={d}>{d}</option>
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
                           ))}
                         </select>
                       </label>
@@ -1306,12 +1330,19 @@ function AdminDashboard() {
               <p className="admin-classification-note">
                 Students in <strong>{promotionClass}</strong>
                 {isSeniorClass(promotionClass) && (
-                  <> — <strong>{promotionDepartment}</strong> Department</>
+                  <>
+                    {" "}
+                    — <strong>{promotionDepartment}</strong> Department
+                  </>
                 )}
-                {" "}will be moved to <strong>{destinationClass}</strong>
+                will be moved to <strong>{destinationClass}</strong>
                 {isSeniorClass(destinationClass) && (
-                  <> — <strong>{destinationDepartment}</strong> Department</>
-                )}.
+                  <>
+                    {" "}
+                    — <strong>{destinationDepartment}</strong> Department
+                  </>
+                )}
+                .
               </p>
               <div className="admin-table-wrap">
                 <table className="admin-table">
@@ -1326,29 +1357,44 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered(promotionStudents, ["id", "name", "className", "department"]).map((student) => (
-                      <tr key={student.id}>
-                        <td className="admin-id">{student.admissionNumber || student.id}</td>
-                        <td><strong>{student.name}</strong></td>
-                        <td>{student.className}</td>
-                        <td>{student.department || "—"}</td>
-                        <td>
-                          <span className={`admin-status ${student.status === "Promoted" ? "published" : "open"}`}>
-                            {student.status}
-                          </span>
-                        </td>
-                        <td>
-                          <button className="admin-table-action" onClick={() => promoteStudent(student.id)}>
-                            <TrendingUp size={15} />
-                            Promote
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filtered(promotionStudents, ["id", "name", "className", "department"]).map(
+                      (student) => (
+                        <tr key={student.id}>
+                          <td className="admin-id">
+                            {student.admissionNumber || student.id}
+                          </td>
+                          <td>
+                            <strong>{student.name}</strong>
+                          </td>
+                          <td>{student.className}</td>
+                          <td>{student.department || "—"}</td>
+                          <td>
+                            <span
+                              className={`admin-status ${
+                                student.status === "Promoted" ? "published" : "open"
+                              }`}
+                            >
+                              {student.status}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="admin-table-action"
+                              onClick={() => promoteStudent(student.id)}
+                            >
+                              <TrendingUp size={15} />
+                              Promote
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )}
                   </tbody>
                 </table>
               </div>
-              {promotionStudents.length === 0 && <EmptyState text="No students found in this class and department." />}
+              {promotionStudents.length === 0 && (
+                <EmptyState text="No students found in this class and department." />
+              )}
             </section>
           )}
 
@@ -1368,7 +1414,10 @@ function AdminDashboard() {
 
       {/* MODALS */}
       {modal && (
-        <div className="admin-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setModal("")}>
+        <div
+          className="admin-modal-backdrop"
+          onMouseDown={(e) => e.target === e.currentTarget && setModal("")}
+        >
           <div className="admin-modal">
             <div className="admin-modal-heading">
               <div>
@@ -1391,28 +1440,77 @@ function AdminDashboard() {
             {modal === "student" && (
               <form onSubmit={addStudent}>
                 <FormField label="Student full name">
-                  <input required value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} placeholder="Enter student's full name" />
+                  <input
+                    required
+                    value={studentForm.name}
+                    onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })}
+                    placeholder="Enter student's full name"
+                  />
                 </FormField>
                 <FormField label="Admission number">
-                  <input required value={studentForm.admissionNumber} onChange={(e) => setStudentForm({ ...studentForm, admissionNumber: e.target.value })} placeholder="e.g. OTS/2025/001" />
+                  <input
+                    required
+                    value={studentForm.admissionNumber}
+                    onChange={(e) =>
+                      setStudentForm({ ...studentForm, admissionNumber: e.target.value })
+                    }
+                    placeholder="e.g. SCH2025001"
+                  />
                 </FormField>
                 <FormField label="Password">
-                  <input required type="password" value={studentForm.password} onChange={(e) => setStudentForm({ ...studentForm, password: e.target.value })} placeholder="Set login password" />
+                  <input
+                    required
+                    type="password"
+                    value={studentForm.password}
+                    onChange={(e) =>
+                      setStudentForm({ ...studentForm, password: e.target.value })
+                    }
+                    placeholder="Set login password"
+                  />
                 </FormField>
                 <FormField label="Class">
-                  <select required value={studentForm.className} onChange={(e) => setStudentForm({ ...studentForm, className: e.target.value, department: "Science" })}>
-                    {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <select
+                    required
+                    value={studentForm.className}
+                    onChange={(e) =>
+                      setStudentForm({
+                        ...studentForm,
+                        className: e.target.value,
+                        department: "Science",
+                      })
+                    }
+                  >
+                    {secondaryClasses.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                   </select>
                 </FormField>
                 {isSeniorClass(studentForm.className) && (
                   <FormField label="Department">
-                    <select required value={studentForm.department} onChange={(e) => setStudentForm({ ...studentForm, department: e.target.value })}>
-                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                    <select
+                      required
+                      value={studentForm.department}
+                      onChange={(e) =>
+                        setStudentForm({ ...studentForm, department: e.target.value })
+                      }
+                    >
+                      {departments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
                     </select>
                   </FormField>
                 )}
                 <FormField label="Gender">
-                  <select value={studentForm.gender} onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value })}>
+                  <select
+                    value={studentForm.gender}
+                    onChange={(e) =>
+                      setStudentForm({ ...studentForm, gender: e.target.value })
+                    }
+                  >
                     <option>Female</option>
                     <option>Male</option>
                   </select>
@@ -1424,20 +1522,56 @@ function AdminDashboard() {
             {modal === "subject" && (
               <form onSubmit={addSubject}>
                 <FormField label="Subject name">
-                  <input required value={subjectForm.name} onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })} placeholder="e.g. Mathematics" />
+                  <input
+                    required
+                    value={subjectForm.name}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                    placeholder="e.g. Mathematics"
+                  />
                 </FormField>
                 <FormField label="Subject code">
-                  <input required value={subjectForm.code} onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value.toUpperCase() })} placeholder="e.g. MTH" />
+                  <input
+                    required
+                    value={subjectForm.code}
+                    onChange={(e) =>
+                      setSubjectForm({ ...subjectForm, code: e.target.value.toUpperCase() })
+                    }
+                    placeholder="e.g. MTH"
+                  />
                 </FormField>
                 <FormField label="Class">
-                  <select required value={subjectForm.className} onChange={(e) => setSubjectForm({ ...subjectForm, className: e.target.value, department: "Science" })}>
-                    {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <select
+                    required
+                    value={subjectForm.className}
+                    onChange={(e) =>
+                      setSubjectForm({
+                        ...subjectForm,
+                        className: e.target.value,
+                        department: "Science",
+                      })
+                    }
+                  >
+                    {secondaryClasses.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                   </select>
                 </FormField>
                 {isSeniorClass(subjectForm.className) && (
                   <FormField label="Department">
-                    <select required value={subjectForm.department} onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}>
-                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                    <select
+                      required
+                      value={subjectForm.department}
+                      onChange={(e) =>
+                        setSubjectForm({ ...subjectForm, department: e.target.value })
+                      }
+                    >
+                      {departments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
                     </select>
                   </FormField>
                 )}
@@ -1448,23 +1582,59 @@ function AdminDashboard() {
             {modal === "enrollment" && (
               <form onSubmit={addEnrollment}>
                 <FormField label="Student full name">
-                  <input required value={enrollmentForm.student} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, student: e.target.value })} placeholder="Enter student's full name" />
+                  <input
+                    required
+                    value={enrollmentForm.student}
+                    onChange={(e) =>
+                      setEnrollmentForm({ ...enrollmentForm, student: e.target.value })
+                    }
+                    placeholder="Enter student's full name"
+                  />
                 </FormField>
                 <FormField label="Class">
-                  <select required value={enrollmentForm.className} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, className: e.target.value, department: "" })}>
-                    {enrollmentClassOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <select
+                    required
+                    value={enrollmentForm.className}
+                    onChange={(e) =>
+                      setEnrollmentForm({
+                        ...enrollmentForm,
+                        className: e.target.value,
+                        department: "",
+                      })
+                    }
+                  >
+                    {enrollmentClassOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                   </select>
                 </FormField>
                 {isSeniorClass(enrollmentForm.className) && (
                   <FormField label="Department">
-                    <select required value={enrollmentForm.department} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, department: e.target.value })}>
+                    <select
+                      required
+                      value={enrollmentForm.department}
+                      onChange={(e) =>
+                        setEnrollmentForm({ ...enrollmentForm, department: e.target.value })
+                      }
+                    >
                       <option value="">Select department</option>
-                      {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                      {departments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
                     </select>
                   </FormField>
                 )}
                 <FormField label="Term">
-                  <select value={enrollmentForm.term} onChange={(e) => setEnrollmentForm({ ...enrollmentForm, term: e.target.value })}>
+                  <select
+                    value={enrollmentForm.term}
+                    onChange={(e) =>
+                      setEnrollmentForm({ ...enrollmentForm, term: e.target.value })
+                    }
+                  >
                     <option>First Term</option>
                     <option>Second Term</option>
                     <option>Third Term</option>
@@ -1481,31 +1651,54 @@ function AdminDashboard() {
                   {isSeniorClass(scoreClass) && <span>{scoreDepartment} Department</span>}
                 </div>
                 <FormField label="Student">
-                  <select required value={scoreForm.student} onChange={(e) => setScoreForm({ ...scoreForm, student: e.target.value })}>
+                  <select
+                    required
+                    value={scoreForm.student}
+                    onChange={(e) => setScoreForm({ ...scoreForm, student: e.target.value })}
+                  >
                     <option value="">Select a student</option>
                     {scoreStudents.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.admissionNumber})</option>
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.admissionNumber})
+                      </option>
                     ))}
                   </select>
                 </FormField>
                 <FormField label="Subject">
-                  <select required value={scoreForm.subject} onChange={(e) => setScoreForm({ ...scoreForm, subject: e.target.value })}>
+                  <select
+                    required
+                    value={scoreForm.subject}
+                    onChange={(e) => setScoreForm({ ...scoreForm, subject: e.target.value })}
+                  >
                     <option value="">Select a subject</option>
                     {scoreSubjects.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.code})
+                      </option>
                     ))}
                   </select>
                 </FormField>
                 <div className="admin-form-two">
                   <FormField label="Academic term">
-                    <select required value={scoreForm.term} onChange={(e) => setScoreForm({ ...scoreForm, term: e.target.value })}>
+                    <select
+                      required
+                      value={scoreForm.term}
+                      onChange={(e) => setScoreForm({ ...scoreForm, term: e.target.value })}
+                    >
                       <option>First Term</option>
                       <option>Second Term</option>
                       <option>Third Term</option>
                     </select>
                   </FormField>
                   <FormField label="Academic year">
-                    <input required value={scoreForm.academicYear} onChange={(e) => setScoreForm({ ...scoreForm, academicYear: e.target.value })} placeholder="2025/2026" />
+                    <input
+                      required
+                      value={scoreForm.academicYear}
+                      onChange={(e) =>
+                        setScoreForm({ ...scoreForm, academicYear: e.target.value })
+                      }
+                      placeholder="2025/2026"
+                    />
                   </FormField>
                 </div>
                 <div className="admin-score-section-heading">
@@ -1520,7 +1713,17 @@ function AdminDashboard() {
                     ["assignment", "Assignment (0–10)"],
                   ].map(([field, label]) => (
                     <FormField label={label} key={field}>
-                      <input required type="number" min="0" max="10" step="0.01" value={scoreForm[field]} onChange={(e) => setScoreForm({ ...scoreForm, [field]: e.target.value })} />
+                      <input
+                        required
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.01"
+                        value={scoreForm[field]}
+                        onChange={(e) =>
+                          setScoreForm({ ...scoreForm, [field]: e.target.value })
+                        }
+                      />
                     </FormField>
                   ))}
                 </div>
@@ -1529,18 +1732,47 @@ function AdminDashboard() {
                   <span>Maximum: 60 marks</span>
                 </div>
                 <FormField label="Examination score (0–60)">
-                  <input required type="number" min="0" max="60" step="0.01" value={scoreForm.exam} onChange={(e) => setScoreForm({ ...scoreForm, exam: e.target.value })} />
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    max="60"
+                    step="0.01"
+                    value={scoreForm.exam}
+                    onChange={(e) => setScoreForm({ ...scoreForm, exam: e.target.value })}
+                  />
                 </FormField>
                 <FormField label="Manual class position (optional)">
-                  <input type="number" min="1" step="1" value={scoreForm.noInClass} onChange={(e) => setScoreForm({ ...scoreForm, noInClass: e.target.value })} placeholder="Enter position if manually assigned" />
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={scoreForm.noInClass}
+                    onChange={(e) =>
+                      setScoreForm({ ...scoreForm, noInClass: e.target.value })
+                    }
+                    placeholder="Enter position if manually assigned"
+                  />
                 </FormField>
                 <div className="admin-score-calculation">
-                  <div><span>Continuous assessment</span><strong>{scoreCA.toFixed(2)} / 40</strong></div>
-                  <div><span>Total score</span><strong>{scoreTotal.toFixed(2)} / 100</strong></div>
+                  <div>
+                    <span>Continuous assessment</span>
+                    <strong>{scoreCA.toFixed(2)} / 40</strong>
+                  </div>
+                  <div>
+                    <span>Total score</span>
+                    <strong>{scoreTotal.toFixed(2)} / 100</strong>
+                  </div>
                   {liveGrade && (
                     <>
-                      <div><span>Calculated grade</span><strong>{liveGrade.grade}</strong></div>
-                      <div><span>Subject remark</span><strong>{liveGrade.remark}</strong></div>
+                      <div>
+                        <span>Calculated grade</span>
+                        <strong>{liveGrade.grade}</strong>
+                      </div>
+                      <div>
+                        <span>Subject remark</span>
+                        <strong>{liveGrade.remark}</strong>
+                      </div>
                     </>
                   )}
                 </div>
@@ -1554,20 +1786,39 @@ function AdminDashboard() {
   );
 }
 
-function ClassificationFilter({ selectedClass, setSelectedClass, selectedDepartment, setSelectedDepartment }) {
+function ClassificationFilter({
+  selectedClass,
+  setSelectedClass,
+  selectedDepartment,
+  setSelectedDepartment,
+  allowAll = false,
+}) {
+  const options = allowAll ? filterClassOptions : secondaryClasses;
+
   return (
     <div className="admin-classification-controls">
       <label className="admin-form-field">
         <span>Select class</span>
         <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
-          {secondaryClasses.map((c) => <option key={c} value={c}>{c}</option>)}
+          {options.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
         </select>
       </label>
-      {isSeniorClass(selectedClass) && (
+      {selectedClass !== "All" && isSeniorClass(selectedClass) && (
         <label className="admin-form-field">
           <span>Select department</span>
-          <select value={selectedDepartment} onChange={(e) => setSelectedDepartment(e.target.value)}>
-            {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+          <select
+            value={selectedDepartment}
+            onChange={(e) => setSelectedDepartment(e.target.value)}
+          >
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
           </select>
         </label>
       )}
@@ -1586,7 +1837,11 @@ function PanelHeading({ title, subtitle, search, setSearch, action, actionLabel 
         {typeof search === "string" && (
           <div className="admin-search">
             <Search size={16} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records..." />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search records..."
+            />
           </div>
         )}
         {action && (
@@ -1601,7 +1856,9 @@ function PanelHeading({ title, subtitle, search, setSearch, action, actionLabel 
 }
 
 function StudentTable({ students, onDelete, compact }) {
-  if (!students.length) return <EmptyState text="No student records found for this class and department." />;
+  if (!students.length) {
+    return <EmptyState text="No student records found for this class and department." />;
+  }
   return (
     <div className="admin-table-wrap">
       <table className="admin-table">
@@ -1620,18 +1877,28 @@ function StudentTable({ students, onDelete, compact }) {
           {students.map((student) => (
             <tr key={student.id}>
               <td className="admin-id">{student.admissionNumber || student.id}</td>
-              <td><strong>{student.name}</strong></td>
+              <td>
+                <strong>{student.name}</strong>
+              </td>
               <td>{student.className}</td>
               <td>{student.department || "—"}</td>
               <td>{student.gender}</td>
               <td>
-                <span className={`admin-status ${student.status === "Promoted" ? "published" : "open"}`}>
+                <span
+                  className={`admin-status ${
+                    student.status === "Promoted" ? "published" : "open"
+                  }`}
+                >
                   {student.status}
                 </span>
               </td>
               {!compact && (
                 <td>
-                  <button className="admin-icon-action danger" title="Delete student" onClick={() => onDelete(student.id)}>
+                  <button
+                    className="admin-icon-action danger"
+                    title="Delete student"
+                    onClick={() => onDelete(student.id)}
+                  >
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -1645,7 +1912,9 @@ function StudentTable({ students, onDelete, compact }) {
 }
 
 function ScoreTable({ scores }) {
-  if (!scores.length) return <EmptyState text="No score records found for this selection." />;
+  if (!scores.length) {
+    return <EmptyState text="No score records found for this selection." />;
+  }
   return (
     <div className="admin-table-wrap">
       <table className="admin-table">
@@ -1675,7 +1944,9 @@ function ScoreTable({ scores }) {
               Number(score.assignment || 0);
             return (
               <tr key={score.id}>
-                <td><strong>{score.studentName || score.student}</strong></td>
+                <td>
+                  <strong>{score.studentName || score.student}</strong>
+                </td>
                 <td>{score.subjectName || score.subject}</td>
                 <td>{score.term}</td>
                 <td>{score.academicYear}</td>
@@ -1685,8 +1956,12 @@ function ScoreTable({ scores }) {
                 <td>{score.assignment}</td>
                 <td>{ca}</td>
                 <td>{score.exam}</td>
-                <td><strong>{score.totalScore}</strong></td>
-                <td><strong>{score.grade || "—"}</strong></td>
+                <td>
+                  <strong>{score.totalScore}</strong>
+                </td>
+                <td>
+                  <strong>{score.grade || "—"}</strong>
+                </td>
                 <td>{score.remark || "—"}</td>
               </tr>
             );
@@ -1709,8 +1984,12 @@ function FormField({ label, children }) {
 function ModalActions({ onCancel, submitLabel = "Save record" }) {
   return (
     <div className="admin-modal-actions">
-      <button type="button" className="admin-secondary-button" onClick={onCancel}>Cancel</button>
-      <button type="submit" className="admin-primary-button">{submitLabel}</button>
+      <button type="button" className="admin-secondary-button" onClick={onCancel}>
+        Cancel
+      </button>
+      <button type="submit" className="admin-primary-button">
+        {submitLabel}
+      </button>
     </div>
   );
 }
