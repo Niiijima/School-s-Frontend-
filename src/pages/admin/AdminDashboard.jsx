@@ -74,7 +74,7 @@ const subjectAssignmentOptions = [
   ),
 ];
 
-const CURRENT_ACADEMIC_YEAR = "2025/2026";
+const CURRENT_ACADEMIC_YEAR = "2026/2027";
 
 const navigation = [
   { label: "Overview", icon: LayoutDashboard },
