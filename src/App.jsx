@@ -14,6 +14,7 @@ import slide11 from "./assets/11.jpeg";
 import founderPhoto from "./assets/PT.jpeg";
 
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import ResultLock from "./pages/admin/ResultLock";
 import StudentDashboard from "./pages/StudentDashboard";
 import AdminLogin from "./pages/admin/AdminLogin";
 import StudentLogin from "./pages/studentlogin";
@@ -171,7 +172,6 @@ function HomePage() {
 
   const openAddEvent = () => {
     if (!isAdminLoggedIn) {
-      // No more fake credentials — send them to real admin login
       window.location.href = "/admin/login";
       return;
     }
@@ -545,7 +545,6 @@ function HomePage() {
         </div>
       </footer>
 
-      {/* Add Event Modal — only shown when admin is already logged in */}
       {isModalOpen && isAdminLoggedIn && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -690,7 +689,7 @@ export default function App() {
   const token = localStorage.getItem("token");
   const role = localStorage.getItem("role");
 
-  // Protect admin dashboard
+  // Admin dashboard
   if (currentPath === "/admin/dashboard") {
     if (!token || role !== "admin") {
       window.location.href = "/admin/login";
@@ -699,6 +698,16 @@ export default function App() {
     return <AdminDashboard />;
   }
 
+  // Individual student result locks
+  if (currentPath === "/admin/result-locks") {
+    if (!token || role !== "admin") {
+      window.location.href = "/admin/login";
+      return null;
+    }
+    return <ResultLock />;
+  }
+
+  // Admin login
   if (currentPath === "/admin/login") {
     if (token && role === "admin") {
       window.location.href = "/admin/dashboard";
@@ -707,7 +716,7 @@ export default function App() {
     return <AdminLogin />;
   }
 
-  // Protect student dashboard + results
+  // Student dashboard + results
   if (
     currentPath === "/student/dashboard" ||
     currentPath.startsWith("/student/results/")
@@ -719,6 +728,7 @@ export default function App() {
     return <StudentDashboard />;
   }
 
+  // Student login
   if (currentPath === "/student/login") {
     if (token && role === "student") {
       window.location.href = "/student/dashboard";

@@ -84,6 +84,7 @@ const navigation = [
   { label: "Submit Scores", icon: ClipboardList },
   { label: "Student Results", icon: GraduationCap },
   { label: "Academic Terms", icon: CalendarDays },
+  { label: "Result Locks", icon: Lock },
   { label: "Promote Students", icon: TrendingUp },
 ];
 
@@ -317,6 +318,11 @@ function AdminDashboard() {
   }, []);
 
   const openPage = (page) => {
+    if (page === "Result Locks") {
+      window.location.href = "/admin/result-locks";
+      return;
+    }
+
     setActivePage(page);
     setSearch("");
     setSidebarOpen(false);
