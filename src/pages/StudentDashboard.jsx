@@ -6,12 +6,72 @@ import "./StudentDashboard.css";
 import schoolLogo from "../assets/logo.jpeg";
 import schoolStamp from "../assets/stamp.jpeg";
 
-const CURRENT_ACADEMIC_YEAR = "2025/2026";
+const CURRENT_ACADEMIC_YEAR = "2026/2027";
+
+const DEFAULT_SESSIONS = ["2025/2026", "2026/2027"];
+
+const SESSION_STORAGE_KEY = "studentAcademicYear";
+
+function readStoredAcademicYear() {
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (stored && /^\d{4}\/\d{4}$/.test(stored.trim())) {
+      return stored.trim();
+    }
+  } catch {
+    // ignore
+  }
+  return CURRENT_ACADEMIC_YEAR;
+}
+
+function writeStoredAcademicYear(year) {
+  try {
+    const clean = String(year || "").trim();
+    if (/^\d{4}\/\d{4}$/.test(clean)) {
+      localStorage.setItem(SESSION_STORAGE_KEY, clean);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const PDF_PURPLE = [88, 28, 135];
 const PDF_LIGHT_PURPLE = [245, 237, 252];
 
+const TERMS = [
+  {
+    key: "firstTerm",
+    route: "first",
+    label: "First Term Result",
+    term: "First Term",
+  },
+  {
+    key: "secondTerm",
+    route: "second",
+    label: "Second Term Result",
+    term: "Second Term",
+  },
+  {
+    key: "thirdTerm",
+    route: "third",
+    label: "Third Term / Annual Report",
+    term: "Third Term",
+  },
+];
+
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function safeNumber(value) {
+  return hasValue(value) && Number.isFinite(Number(value))
+    ? Number(value)
+    : null;
+}
+
 function getGradeAndRemark(score, currentClass = "") {
   const isSeniorClass = /^(SS|SSS)/i.test(String(currentClass).trim());
+
   if (isSeniorClass) {
     if (score >= 75) return { grade: "A1", remark: "Excellent" };
     if (score >= 70) return { grade: "B2", remark: "Very Good" };
@@ -23,94 +83,232 @@ function getGradeAndRemark(score, currentClass = "") {
     if (score >= 40) return { grade: "E8", remark: "Fair" };
     return { grade: "F9", remark: "Fail" };
   }
+
   if (score >= 70) return { grade: "A", remark: "Distinction" };
   if (score >= 60) return { grade: "B", remark: "Upper Credit" };
   if (score >= 50) return { grade: "C", remark: "Lower Credit" };
   if (score >= 40) return { grade: "P", remark: "Pass" };
+
   return { grade: "F", remark: "Fail" };
 }
 
 function getSubjectResult(subject, currentClass) {
-  const maximumScore = subject.maximumScore ?? 100;
-  const total = Number(subject.total || subject.totalScore || 0);
-  const percentage =
-    maximumScore > 0
-      ? (total / maximumScore) * 100
-      : Number(subject.percentage || 0);
-  const roundedPercentage = Number(percentage.toFixed(2));
-  const ca =
-    subject.ca ??
-    Number(subject.test1 || 0) +
-      Number(subject.test2 || 0) +
-      Number(subject.test3 || 0) +
-      Number(subject.assignment || 0);
+  const test1 = safeNumber(subject.test1);
+  const test2 = safeNumber(subject.test2);
+  const notes = safeNumber(subject.notes);
+  const oral = safeNumber(subject.oral);
+  const test3 = safeNumber(subject.test3);
+  const assignment = safeNumber(subject.assignment);
+
+  const examValue =
+    safeNumber(subject.exam) ??
+    safeNumber(subject.examination) ??
+    safeNumber(subject.examScore) ??
+    safeNumber(subject.examMark) ??
+    safeNumber(subject.examinationScore);
+
+  const caDirect =
+    safeNumber(subject.ca) ??
+    safeNumber(subject.caTotal) ??
+    safeNumber(subject.continuousAssessment);
+
+  const storedTotal =
+    safeNumber(subject.totalScore) ??
+    safeNumber(subject.total) ??
+    safeNumber(subject.grandTotal);
+
+  const newCAComplete = [test1, test2, notes, oral].every((v) => v !== null);
+  const legacyCAComplete = [test1, test2, test3, assignment].every(
+    (v) => v !== null
+  );
+  const hasNewParts = [notes, oral].some((v) => v !== null);
+  const hasLegacyParts = [test3, assignment].some((v) => v !== null);
+
+  let ca = null;
+
+  if (newCAComplete) {
+    ca = Number(test1) + Number(test2) + Number(notes) + Number(oral);
+  } else if (legacyCAComplete) {
+    ca =
+      Number(test1) + Number(test2) + Number(test3) + Number(assignment);
+  } else if (caDirect !== null) {
+    ca = caDirect;
+  } else if (subject.caSubmitted === true || hasNewParts) {
+    if ([test1, test2, notes, oral].some((v) => v !== null)) {
+      ca =
+        Number(test1 || 0) +
+        Number(test2 || 0) +
+        Number(notes || 0) +
+        Number(oral || 0);
+    }
+  } else if (hasLegacyParts) {
+    ca =
+      Number(test1 || 0) +
+      Number(test2 || 0) +
+      Number(test3 || 0) +
+      Number(assignment || 0);
+  }
+
+  // Exam recovery (including older rows that only stored total)
+  let exam = null;
+  if (examValue !== null) {
+    exam = examValue;
+  } else if (subject.examSubmitted === true) {
+    exam = 0;
+  } else if (ca !== null && storedTotal !== null) {
+    const derived = Number(storedTotal) - Number(ca);
+    if (Number.isFinite(derived) && derived >= 0) {
+      exam = derived;
+    }
+  }
+
+  const examStatus = String(subject.examStatus || "").toLowerCase();
+  const examNotTaken =
+    examStatus === "not taken" ||
+    examStatus === "nottaken" ||
+    subject.examNotTaken === true;
+
+  let total = null;
+  let complete = false;
+
+  if (ca !== null && exam !== null) {
+    total = storedTotal !== null ? storedTotal : ca + exam;
+    complete = true;
+  } else if (storedTotal !== null) {
+    total = storedTotal;
+    complete = true;
+    if (ca === null && exam !== null) {
+      const maybeCa = Number(storedTotal) - Number(exam);
+      if (Number.isFinite(maybeCa) && maybeCa >= 0 && maybeCa <= 40) {
+        ca = maybeCa;
+      }
+    }
+  }
+
+  const percentage = total !== null ? Number(Number(total).toFixed(2)) : null;
+
+  const calculatedGrade =
+    percentage !== null
+      ? getGradeAndRemark(percentage, currentClass)
+      : { grade: null, remark: null };
 
   return {
     ...subject,
-    name: subject.name || subject.subjectName || subject.subject || "Subject",
-    ca: Number(ca),
-    exam: Number(subject.exam || 0),
-    total: total || Number(ca) + Number(subject.exam || 0),
-    percentage: roundedPercentage,
-    ...getGradeAndRemark(roundedPercentage, currentClass),
+    name:
+      subject.name ||
+      subject.subjectName ||
+      subject.subject ||
+      "Subject",
+    test1,
+    test2,
+    notes,
+    oral,
+    test3,
+    assignment,
+    ca,
+    caSubmitted: ca !== null,
+    exam,
+    examSubmitted: exam !== null,
+    examNotTaken,
+    total,
+    percentage,
+    grade: complete
+      ? subject.grade || calculatedGrade.grade
+      : null,
+    remark: complete
+      ? subject.remark || calculatedGrade.remark
+      : null,
+    complete,
   };
 }
 
 function getResultSummary(result, currentClass) {
-  const subjects = (result.subjects || []).map((s) =>
-    getSubjectResult(s, currentClass)
+  const subjects = (result.subjects || []).map((subject) =>
+    getSubjectResult(subject, currentClass)
   );
-  const totalScore = subjects.reduce((sum, s) => sum + Number(s.total || 0), 0);
-  const totalMaximumScore = subjects.reduce(
-    (sum, s) => sum + Number(s.maximumScore ?? 100),
+
+  const completedSubjects = subjects.filter((subject) => subject.complete);
+
+  const totalScore = completedSubjects.reduce(
+    (sum, subject) => sum + Number(subject.total || 0),
     0
   );
-  const totalPercentage =
-    totalMaximumScore > 0 ? (totalScore / totalMaximumScore) * 100 : 0;
-  const subjectsOffered = subjects.length;
+
+  const totalMaximumScore = completedSubjects.length * 100;
+
   const terminalAverage =
-    subjectsOffered > 0
-      ? subjects.reduce((sum, s) => sum + s.percentage, 0) / subjectsOffered
-      : 0;
+    completedSubjects.length > 0
+      ? completedSubjects.reduce(
+          (sum, subject) => sum + Number(subject.percentage || 0),
+          0
+        ) / completedSubjects.length
+      : null;
 
   return {
     subjects,
     totalScore,
     totalMaximumScore,
-    totalPercentage: Number(totalPercentage.toFixed(2)),
-    subjectsOffered,
-    terminalAverage: Number(terminalAverage.toFixed(2)),
+    subjectsOffered: subjects.length,
+    completedSubjects: completedSubjects.length,
+    pendingSubjects: subjects.length - completedSubjects.length,
+    terminalAverage:
+      terminalAverage !== null ? Number(terminalAverage.toFixed(2)) : null,
   };
 }
 
 function getAutomaticYearTutorComment(averageScore) {
-  if (averageScore >= 75)
+  if (averageScore === null) {
+    return "Your result is incomplete. Continue working hard while outstanding scores are being processed.";
+  }
+
+  if (averageScore >= 75) {
     return "An exceptionally brilliant performance. Keep maintaining this golden standard.";
-  if (averageScore >= 65)
-    return "A highly commendable result. With this consistency, top honors are within reach next term.";
-  if (averageScore >= 50)
+  }
+
+  if (averageScore >= 65) {
+    return "A highly commendable result. With this consistency, top honours are within reach next term.";
+  }
+
+  if (averageScore >= 50) {
     return "A good performance, but you possess the capability to attain higher credit marks.";
-  if (averageScore >= 40)
-    return "Passable terminal record. You are playing on the borderline; step up your study habits.";
-  return "An unsatisfactory performance. Intensive remedial study and closer supervision are urgently required.";
+  }
+
+  if (averageScore >= 40) {
+    return "Passable terminal record. Step up your study habits and work towards better results.";
+  }
+
+  return "An unsatisfactory performance. Intensive remedial study and closer supervision are recommended.";
 }
 
 function getAutomaticAdminComment(averageScore) {
-  if (averageScore >= 75)
+  if (averageScore === null) {
+    return "The result is incomplete. Outstanding assessments should be resolved before a final academic assessment is made.";
+  }
+
+  if (averageScore >= 75) {
     return "Outstanding academic excellence. A proud reflection of hard work. Keep it up!";
-  if (averageScore >= 65)
+  }
+
+  if (averageScore >= 65) {
     return "Very impressive progress. Promising results showing dedication to studies.";
-  if (averageScore >= 50)
-    return "A satisfactory performance. Focus more on weak areas to secure top tiers next session.";
-  if (averageScore >= 40)
-    return "Fair trial, but there is vast room for improvement. Double your efforts.";
-  return "Unacceptable standard. Must show a completely renewed attitude to work next term to pass.";
+  }
+
+  if (averageScore >= 50) {
+    return "A satisfactory performance. Focus more on weak areas to secure higher marks.";
+  }
+
+  if (averageScore >= 40) {
+    return "Fair trial, but there is room for improvement. Double your efforts.";
+  }
+
+  return "Performance is below the expected standard. A renewed commitment to academic work is required.";
 }
 
 function initials(name = "") {
   return String(name)
-    .split(" ")
-    .map((p) => p[0])
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
     .filter(Boolean)
     .slice(0, 2)
     .join("")
@@ -123,53 +321,83 @@ function navigateTo(path) {
 
 function formatClass(student) {
   if (!student) return "—";
-  if (student.department) return `${student.currentClass} ${student.department}`;
+
+  if (student.department) {
+    return `${student.currentClass || ""} ${student.department}`.trim();
+  }
+
   return student.currentClass || "—";
 }
 
 function formatDate(value) {
   if (!value) return "Not provided";
-  try {
-    return new Date(value).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return String(value);
-  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function safeFileName(value) {
+  return String(value || "Student")
+    .trim()
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/[^\w-]/g, "");
 }
 
 async function loadImageForPDF(imageUrl, baseUrl = window.location.origin) {
   if (!imageUrl || typeof imageUrl !== "string") return null;
+
   let objectUrl = null;
+
   try {
     const resolvedUrl = /^(https?:|data:|blob:)/i.test(imageUrl)
       ? imageUrl
       : new URL(imageUrl, baseUrl).href;
+
     let imageSource = resolvedUrl;
+
     if (!/^(data:|blob:)/i.test(resolvedUrl)) {
       const response = await fetch(resolvedUrl, {
         credentials: "same-origin",
         mode: "cors",
       });
-      if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+
+      if (!response.ok) {
+        throw new Error(`Image request failed: ${response.status}`);
+      }
+
       const blob = await response.blob();
       objectUrl = URL.createObjectURL(blob);
       imageSource = objectUrl;
     }
+
     const image = new Image();
+
     await new Promise((resolve, reject) => {
       image.onload = resolve;
       image.onerror = () => reject(new Error("Image could not be decoded."));
       image.src = imageSource;
     });
+
     const canvas = document.createElement("canvas");
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Could not create image canvas.");
-    ctx.drawImage(image, 0, 0);
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Could not create image canvas.");
+    }
+
+    context.drawImage(image, 0, 0);
+
     return canvas.toDataURL("image/png");
   } catch (error) {
     console.error("Unable to load PDF image:", imageUrl, error);
@@ -179,43 +407,157 @@ async function loadImageForPDF(imageUrl, baseUrl = window.location.origin) {
   }
 }
 
-function mergeTermAcademicResponses(responses) {
+function pickTermPayload(subject, termKey) {
+  // Nested shape: { firstTerm: { test1, exam, ... } }
+  if (subject[termKey] && typeof subject[termKey] === "object") {
+    return subject[termKey];
+  }
+
+  // Alternate nest keys
+  const altKeys = {
+    firstTerm: ["first", "First Term", "first_term"],
+    secondTerm: ["second", "Second Term", "second_term"],
+    thirdTerm: ["third", "Third Term", "third_term"],
+  };
+
+  for (const key of altKeys[termKey] || []) {
+    if (subject[key] && typeof subject[key] === "object") {
+      return subject[key];
+    }
+  }
+
+  // Flat shape from term-specific API call: scores live on the subject itself
+  const scoreKeys = [
+    "test1",
+    "test2",
+    "test3",
+    "notes",
+    "oral",
+    "assignment",
+    "ca",
+    "exam",
+    "totalScore",
+    "total",
+    "grade",
+    "remark",
+    "caSubmitted",
+    "examSubmitted",
+    "percentage",
+  ];
+
+  const hasFlatScores = scoreKeys.some(
+    (key) => subject[key] !== null && subject[key] !== undefined && subject[key] !== ""
+  );
+
+  if (hasFlatScores) {
+    const payload = {};
+    scoreKeys.forEach((key) => {
+      if (subject[key] !== undefined) payload[key] = subject[key];
+    });
+    return payload;
+  }
+
+  return null;
+}
+
+function mergeTermAcademicResponses(responses, fallbackYear = CURRENT_ACADEMIC_YEAR) {
   const mergedSubjects = new Map();
+
+  const termKeyFromLabel = (term) => {
+    const normalized = String(term || "").trim().toLowerCase();
+    if (normalized.startsWith("first")) return "firstTerm";
+    if (normalized.startsWith("second")) return "secondTerm";
+    if (normalized.startsWith("third")) return "thirdTerm";
+    return {
+      "First Term": "firstTerm",
+      "Second Term": "secondTerm",
+      "Third Term": "thirdTerm",
+      first: "firstTerm",
+      second: "secondTerm",
+      third: "thirdTerm",
+      firstTerm: "firstTerm",
+      secondTerm: "secondTerm",
+      thirdTerm: "thirdTerm",
+    }[term];
+  };
+
   responses.forEach(({ data, term }) => {
-    if (!data || !Array.isArray(data.reportCardSummary)) return;
-    data.reportCardSummary.forEach((subject) => {
+    if (!data) return;
+
+    const termKey = termKeyFromLabel(term);
+    if (!termKey) return;
+
+    // Prefer reportCardSummary; fall back to subjects / grades arrays
+    const rows =
+      (Array.isArray(data.reportCardSummary) && data.reportCardSummary) ||
+      (Array.isArray(data.subjects) && data.subjects) ||
+      (Array.isArray(data.grades) && data.grades) ||
+      (Array.isArray(data.results) && data.results) ||
+      [];
+
+    if (!rows.length) return;
+
+    rows.forEach((subject) => {
       const subjectKey =
-        subject.subjectCode || subject.subjectName || subject._id || subject.name;
+        subject.subjectCode ||
+        subject.subjectName ||
+        subject.name ||
+        subject.subject ||
+        subject._id ||
+        subject.id;
+
       if (!subjectKey) return;
+
       if (!mergedSubjects.has(subjectKey)) {
         mergedSubjects.set(subjectKey, {
-          subjectName: subject.subjectName || subject.name || "Subject",
-          subjectCode: subject.subjectCode || "",
+          subjectName:
+            subject.subjectName ||
+            subject.name ||
+            subject.subject ||
+            "Subject",
+          subjectCode: subject.subjectCode || subject.code || "",
         });
       }
+
       const existing = mergedSubjects.get(subjectKey);
-      if (subject.firstTerm) existing.firstTerm = subject.firstTerm;
-      if (subject.secondTerm) existing.secondTerm = subject.secondTerm;
-      if (subject.thirdTerm) existing.thirdTerm = subject.thirdTerm;
-      const termKey = {
-        "First Term": "firstTerm",
-        "Second Term": "secondTerm",
-        "Third Term": "thirdTerm",
-      }[term];
-      if (termKey && subject[termKey]) existing[termKey] = subject[termKey];
+      const payload = pickTermPayload(subject, termKey);
+
+      if (payload) {
+        existing[termKey] = {
+          ...payload,
+          name:
+            payload.name ||
+            subject.subjectName ||
+            subject.name ||
+            existing.subjectName,
+          subjectName:
+            payload.subjectName ||
+            subject.subjectName ||
+            subject.name ||
+            existing.subjectName,
+          subjectCode:
+            payload.subjectCode ||
+            subject.subjectCode ||
+            existing.subjectCode,
+        };
+      }
     });
   });
 
-  const firstResponse = responses.find((i) => i.data)?.data;
+  const firstResponse = responses.find((item) => item.data)?.data;
+
   const classSizeResponse = responses
-    .map((i) => i.data)
+    .map((item) => item.data)
     .find(
-      (d) =>
-        d?.classSize != null || d?.noInClass != null || d?.studentsInClass != null
+      (data) =>
+        data?.classSize != null ||
+        data?.noInClass != null ||
+        data?.studentsInClass != null
     );
 
   return {
-    academicYear: firstResponse?.academicYear || CURRENT_ACADEMIC_YEAR,
+    academicYear:
+      firstResponse?.academicYear || fallbackYear || CURRENT_ACADEMIC_YEAR,
     reportCardSummary: Array.from(mergedSubjects.values()),
     termResponses: responses,
     classSize:
@@ -226,42 +568,48 @@ function mergeTermAcademicResponses(responses) {
   };
 }
 
-function buildTermResults(academic) {
+function buildTermResults(academic, sessionYear = CURRENT_ACADEMIC_YEAR) {
+  const year =
+    academic?.academicYear || sessionYear || CURRENT_ACADEMIC_YEAR;
+
   const empty = {
     first: {
       label: "First Term Result",
       uploaded: false,
       subjects: [],
       term: "First Term",
-      academicYear: CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
     },
     second: {
       label: "Second Term Result",
       uploaded: false,
       subjects: [],
       term: "Second Term",
-      academicYear: CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
     },
     third: {
       label: "Third Term / Annual Report",
       uploaded: false,
       subjects: [],
       term: "Third Term",
-      academicYear: CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
     },
   };
+
   if (!academic) return empty;
+
   const reportSubjects = academic.reportCardSummary || [];
+
   if (!reportSubjects.length) return empty;
 
   const getTermSubjects = (termKey) =>
     reportSubjects
-      .filter((s) => s[termKey])
-      .map((s) => ({
-        ...s[termKey],
-        name: s.subjectName,
-        subjectName: s.subjectName,
-        subjectCode: s.subjectCode,
+      .filter((subject) => subject[termKey])
+      .map((subject) => ({
+        ...subject[termKey],
+        name: subject.subjectName,
+        subjectName: subject.subjectName,
+        subjectCode: subject.subjectCode,
       }));
 
   const firstSubjects = getTermSubjects("firstTerm");
@@ -272,41 +620,111 @@ function buildTermResults(academic) {
     first: {
       label: "First Term Result",
       uploaded: firstSubjects.length > 0,
-      academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
       term: "First Term",
       subjects: firstSubjects,
     },
     second: {
       label: "Second Term Result",
       uploaded: secondSubjects.length > 0,
-      academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
       term: "Second Term",
       subjects: secondSubjects,
     },
     third: {
       label: "Third Term / Annual Report",
       uploaded: thirdSubjects.length > 0,
-      academicYear: academic.academicYear || CURRENT_ACADEMIC_YEAR,
+      academicYear: year,
       term: "Third Term",
       subjects: thirdSubjects,
     },
   };
 }
 
-function StudentHeader({ student, academicYear }) {
+function StudentHeader({
+  student,
+  academicYear,
+  availableSessions = [],
+  sessionMenuOpen,
+  onToggleSessionMenu,
+  onSelectSession,
+}) {
+  const sessions =
+    availableSessions.length > 0
+      ? availableSessions
+      : [academicYear || CURRENT_ACADEMIC_YEAR];
+
   return (
     <header className="student-header">
       <div className="student-brand">
         <img className="student-brand-logo" src={schoolLogo} alt="School logo" />
+
         <div>
           <strong>O'lak Triumph School</strong>
           <span>Student Portal</span>
         </div>
       </div>
+
       <div className="student-header-right">
-        <span className="student-session">
-          {academicYear || CURRENT_ACADEMIC_YEAR} Academic Session
-        </span>
+        <div className="student-session-picker" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="student-session-trigger"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleSessionMenu?.();
+            }}
+            aria-haspopup="listbox"
+            aria-expanded={!!sessionMenuOpen}
+          >
+            <span className="student-session-dot" />
+            <span className="student-session-text">
+              {academicYear || CURRENT_ACADEMIC_YEAR} Academic Session
+            </span>
+            <span
+              className={`student-session-chevron ${
+                sessionMenuOpen ? "open" : ""
+              }`}
+            >
+              ›
+            </span>
+          </button>
+
+          {sessionMenuOpen ? (
+            <div
+              className="student-session-menu"
+              role="listbox"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="student-session-menu-title">Academic sessions</p>
+              <p className="student-session-menu-hint">
+                Switch session to view results from another academic year.
+              </p>
+              <div className="student-session-list">
+                {sessions.map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    role="option"
+                    className={`student-session-option ${
+                      year === academicYear ? "active" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectSession?.(year);
+                    }}
+                  >
+                    <span>{year}</span>
+                    {year === academicYear ? <span>✓</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <div className="student-mini-avatar">
           {student?.profileImage ? (
             <img src={student.profileImage} alt="" />
@@ -314,6 +732,7 @@ function StudentHeader({ student, academicYear }) {
             initials(student?.name || "ST")
           )}
         </div>
+
         <button
           className="secondary-button student-logout-button"
           type="button"
@@ -350,7 +769,8 @@ function PerformanceGraph({ performance = [] }) {
     x: left + (index * chartWidth) / Math.max(performance.length - 1, 1),
     y: bottom - (item.score / 100) * chartHeight,
   }));
-  const line = points.map((p) => `${p.x},${p.y}`).join(" ");
+
+  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
     <div className="performance-chart">
@@ -358,26 +778,49 @@ function PerformanceGraph({ performance = [] }) {
         <span />
         Average score (%)
       </div>
+
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {[0, 25, 50, 75, 100].map((value) => {
           const y = bottom - (value / 100) * chartHeight;
+
           return (
             <g key={value}>
-              <line x1={left} x2={left + chartWidth} y1={y} y2={y} className="chart-grid" />
+              <line
+                x1={left}
+                x2={left + chartWidth}
+                y1={y}
+                y2={y}
+                className="chart-grid"
+              />
+
               <text x="4" y={y + 4} className="chart-axis-label">
                 {value}
               </text>
             </g>
           );
         })}
+
         <polyline points={line} className="chart-line" />
+
         {points.map((point) => (
           <g key={point.term}>
             <circle cx={point.x} cy={point.y} r="5" className="chart-point" />
-            <text x={point.x} y={point.y - 13} textAnchor="middle" className="chart-value">
+
+            <text
+              x={point.x}
+              y={point.y - 13}
+              textAnchor="middle"
+              className="chart-value"
+            >
               {point.score}%
             </text>
-            <text x={point.x} y="177" textAnchor="middle" className="chart-axis-label">
+
+            <text
+              x={point.x}
+              y="177"
+              textAnchor="middle"
+              className="chart-axis-label"
+            >
               {point.term} Term
             </text>
           </g>
@@ -389,21 +832,29 @@ function PerformanceGraph({ performance = [] }) {
 
 async function downloadResultPDF(student, result, studentsInClass = "—") {
   const pdf = new jsPDF("p", "mm", "a4");
+
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 14;
+  const margin = 12;
 
   const summary = getResultSummary(result, student.currentClass);
+
   const adminComment = getAutomaticAdminComment(summary.terminalAverage);
-  const yearTutorComment = getAutomaticYearTutorComment(summary.terminalAverage);
+  const yearTutorComment = getAutomaticYearTutorComment(
+    summary.terminalAverage
+  );
 
   let backendOrigin = window.location.origin;
+
   try {
     if (api.defaults.baseURL) {
-      backendOrigin = new URL(api.defaults.baseURL, window.location.origin).origin;
+      backendOrigin = new URL(
+        api.defaults.baseURL,
+        window.location.origin
+      ).origin;
     }
-  } catch (e) {
-    console.warn(e);
+  } catch (error) {
+    console.warn(error);
   }
 
   const [logoData, profileImageData, stampData] = await Promise.all([
@@ -415,237 +866,423 @@ async function downloadResultPDF(student, result, studentsInClass = "—") {
   if (logoData) {
     try {
       pdf.addImage(logoData, "PNG", margin, 8, 18, 18);
-    } catch (e) {
-      console.warn(e);
+    } catch (error) {
+      console.warn(error);
     }
   }
+
   if (profileImageData) {
     try {
-      pdf.addImage(profileImageData, "PNG", pageWidth - margin - 18, 8, 18, 18);
-    } catch (e) {
-      console.warn(e);
+      pdf.addImage(
+        profileImageData,
+        "PNG",
+        pageWidth - margin - 18,
+        8,
+        18,
+        18
+      );
+    } catch (error) {
+      console.warn(error);
     }
   }
 
   pdf.setTextColor(...PDF_PURPLE);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(15);
-  pdf.text("O'LAK TRIUMPH SCHOOL", pageWidth / 2, 16, { align: "center" });
-  pdf.setFontSize(9);
-  pdf.setTextColor(40, 40, 40);
-  pdf.setFont("helvetica", "normal");
-  pdf.text("REPORT SHEET FOR SECONDARY SCHOOL", pageWidth / 2, 22, {
+
+  pdf.text("O'LAK TRIUMPH SCHOOL", pageWidth / 2, 16, {
     align: "center",
   });
 
-  let y = 28;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(50, 50, 50);
+
+  pdf.text(
+    "12 Oseni Shotonwa Street, Ebute, Ikorodu, Lagos",
+    pageWidth / 2,
+    19,
+    { align: "center" }
+  );
+
+  pdf.setFontSize(9);
+
+  pdf.text("REPORT SHEET FOR SECONDARY SCHOOL", pageWidth / 2, 23, {
+    align: "center",
+  });
+
+  let y = 29;
+
   pdf.setDrawColor(...PDF_PURPLE);
   pdf.setLineWidth(0.4);
-  pdf.rect(margin, y, pageWidth - margin * 2, 20);
+  pdf.rect(margin, y, pageWidth - margin * 2, 21);
 
   pdf.setFontSize(7.5);
   pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(40, 40, 40);
+
   pdf.text(
-    `SESSION: ${result.academicYear || CURRENT_ACADEMIC_YEAR} SESSION`,
+    `SESSION: ${result.academicYear || CURRENT_ACADEMIC_YEAR}`,
     margin + 2,
     y + 5
   );
-  pdf.text(`TERM: ${String(result.term || "").toUpperCase()}`, margin + 72, y + 5);
-  pdf.text(`CLASS: ${formatClass(student)}`, margin + 120, y + 5);
-  pdf.setFont("helvetica", "normal");
+
+  pdf.text(
+    `TERM: ${String(result.term || "").toUpperCase()}`,
+    margin + 76,
+    y + 5
+  );
+
+  pdf.text(`CLASS: ${formatClass(student)}`, margin + 132, y + 5);
+
   pdf.text(
     `STUDENT NAME: ${String(student.name || "").toUpperCase()}`,
     margin + 2,
     y + 11
   );
-  pdf.text(`SEX: ${String(student.gender || "—").toUpperCase()}`, margin + 110, y + 11);
-  pdf.text(`STUDENT NO: ${student.admissionNumber || "—"}`, margin + 2, y + 17);
-  pdf.text(`NO. IN CLASS: ${studentsInClass}`, margin + 110, y + 17);
 
-  y = 54;
+  pdf.text(
+    `SEX: ${String(student.gender || "—").toUpperCase()}`,
+    margin + 132,
+    y + 11
+  );
+
+  pdf.text(
+    `STUDENT NO: ${student.admissionNumber || "—"}`,
+    margin + 2,
+    y + 17
+  );
+
+  pdf.text(`NO. IN CLASS: ${studentsInClass ?? "—"}`, margin + 132, y + 17);
+
+  y = 57;
+
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9);
   pdf.setTextColor(...PDF_PURPLE);
-  pdf.text("PERFORMANCE IN SUBJECTS", pageWidth / 2, y, { align: "center" });
 
-  y = 58;
+  pdf.text("PERFORMANCE IN SUBJECTS", pageWidth / 2, y, {
+    align: "center",
+  });
+
+  y = 61;
+
+  const tableWidth = pageWidth - margin * 2;
+
+  const columns = [
+    { label: "SUBJECT", x: margin + 2 },
+    { label: "CA / 40", x: margin + 73 },
+    { label: "EXAM / 60", x: margin + 94 },
+    { label: "TOTAL", x: margin + 119 },
+    { label: "GRADE", x: margin + 141 },
+    { label: "REMARK", x: margin + 158 },
+  ];
+
   pdf.setFillColor(...PDF_PURPLE);
+  pdf.rect(margin, y, tableWidth, 8, "F");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(6.5);
   pdf.setTextColor(255, 255, 255);
-  pdf.rect(margin, y, pageWidth - margin * 2, 7, "F");
-  pdf.setFontSize(7);
 
-  const col = {
-    subject: margin + 2,
-    ca: margin + 70,
-    exam: margin + 95,
-    pct: margin + 122,
-    grade: margin + 148,
-    remark: margin + 165,
-  };
+  columns.forEach((column) => {
+    pdf.text(column.label, column.x, y + 5);
+  });
 
-  pdf.text("SUBJECTS", col.subject, y + 4.5);
-  pdf.text("CA / 40", col.ca, y + 4.5);
-  pdf.text("EXAM / 60", col.exam, y + 4.5);
-  pdf.text("PERCENTAGE(%)", col.pct, y + 4.5);
-  pdf.text("GRADE", col.grade, y + 4.5);
-  pdf.text("REMARK", col.remark, y + 4.5);
+  y += 8;
 
-  y += 7;
   pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7);
   pdf.setTextColor(40, 40, 40);
 
   summary.subjects.forEach((subject, index) => {
-    if (y > pageHeight - 70) {
+    if (y > pageHeight - 45) {
       pdf.addPage();
       y = 20;
     }
+
     if (index % 2 === 0) {
       pdf.setFillColor(...PDF_LIGHT_PURPLE);
-      pdf.rect(margin, y, pageWidth - margin * 2, 6.5, "F");
+      pdf.rect(margin, y, tableWidth, 8, "F");
     }
-    pdf.text(String(subject.name).toUpperCase().slice(0, 28), col.subject, y + 4.2);
-    pdf.text(`${subject.ca}/40`, col.ca, y + 4.2);
-    pdf.text(`${subject.exam}/60`, col.exam, y + 4.2);
-    pdf.text(String(subject.percentage.toFixed(0)), col.pct, y + 4.2);
-    pdf.text(String(subject.grade), col.grade, y + 4.2);
-    pdf.text(String(subject.remark || "").slice(0, 14), col.remark, y + 4.2);
-    y += 6.5;
+
+    pdf.text(
+      String(subject.name).toUpperCase().slice(0, 30),
+      columns[0].x,
+      y + 5
+    );
+
+    pdf.text(
+      subject.caSubmitted ? `${subject.ca}/40` : "Pending",
+      columns[1].x,
+      y + 5
+    );
+
+    pdf.text(
+      subject.examSubmitted
+        ? `${subject.exam}/60`
+        : subject.examNotTaken
+          ? "Not Taken"
+          : "Pending",
+      columns[2].x,
+      y + 5
+    );
+
+    pdf.text(
+      subject.total !== null ? String(subject.total) : "Pending",
+      columns[3].x,
+      y + 5
+    );
+
+    pdf.text(subject.grade || "—", columns[4].x, y + 5);
+
+    pdf.text(String(subject.remark || "—").slice(0, 15), columns[5].x, y + 5);
+
+    y += 8;
   });
 
-  y += 3;
+  y += 4;
+
+  if (y > pageHeight - 65) {
+    pdf.addPage();
+    y = 20;
+  }
+
   pdf.setDrawColor(...PDF_PURPLE);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 6;
+
+  y += 7;
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(40, 40, 40);
-  // TOTAL under Exam column
-  pdf.text("TOTAL:", col.subject, y);
-  pdf.text(String(summary.totalScore.toFixed(2)), col.exam, y);
-  y += 5;
-  pdf.text("SUBJECT OFFERED:", col.subject, y);
-  pdf.text(String(summary.subjectsOffered), col.exam, y);
-  y += 5;
-  // PERCENTAGE AGGREGATE under Percentage column
-  pdf.setTextColor(...PDF_PURPLE);
-  pdf.text("PERCENTAGE AGGREGATE:", col.subject, y);
-  pdf.text(`${summary.terminalAverage.toFixed(2)}%`, col.pct, y);
 
-  y += 10;
+  pdf.text("TOTAL OF COMPLETED SUBJECTS:", margin + 2, y);
+  pdf.text(summary.totalScore.toFixed(2), margin + 78, y);
+
+  y += 6;
+
+  pdf.text("SUBJECTS OFFERED:", margin + 2, y);
+  pdf.text(String(summary.subjectsOffered), margin + 78, y);
+
+  y += 6;
+
+  pdf.text("COMPLETED SUBJECTS:", margin + 2, y);
+  pdf.text(String(summary.completedSubjects), margin + 78, y);
+
+  y += 6;
+
+  pdf.text("PENDING SUBJECTS:", margin + 2, y);
+  pdf.text(String(summary.pendingSubjects), margin + 78, y);
+
+  y += 6;
+
+  pdf.setTextColor(...PDF_PURPLE);
+  pdf.text("AVERAGE OF COMPLETED SUBJECTS:", margin + 2, y);
+
+  pdf.text(
+    summary.terminalAverage !== null
+      ? `${summary.terminalAverage.toFixed(2)}%`
+      : "Pending",
+    margin + 78,
+    y
+  );
+
+  y += 11;
+
+  if (y > pageHeight - 65) {
+    pdf.addPage();
+    y = 20;
+  }
+
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9);
   pdf.setTextColor(...PDF_PURPLE);
-  pdf.text("RATING", pageWidth / 2, y, { align: "center" });
-  y += 3;
 
-  const ratingTop = y;
-  const ratingHeight = 14;
+  pdf.text("RATING", pageWidth / 2, y, { align: "center" });
+
+  y += 4;
+
   const ratingWidth = pageWidth - margin * 2;
-  const cellW = ratingWidth / 6;
-  const ranges = ["70-100", "60-69.99", "50-59.99", "45-49.99", "40-44.99", "0-39.99"];
+  const cellWidth = ratingWidth / 6;
+  const ratingHeight = 14;
+
+  const ranges = [
+    "70-100",
+    "60-69.99",
+    "50-59.99",
+    "45-49.99",
+    "40-44.99",
+    "0-39.99",
+  ];
+
   const keys = ["A", "B", "C", "D", "E", "F"];
 
   pdf.setDrawColor(...PDF_PURPLE);
   pdf.setLineWidth(0.3);
   pdf.setFillColor(...PDF_LIGHT_PURPLE);
-  pdf.rect(margin, ratingTop, ratingWidth, ratingHeight / 2, "FD");
+
+  pdf.rect(margin, y, ratingWidth, ratingHeight / 2, "FD");
+
   pdf.setFillColor(255, 255, 255);
-  pdf.rect(margin, ratingTop + ratingHeight / 2, ratingWidth, ratingHeight / 2, "FD");
-  for (let i = 0; i <= 6; i++) {
-    pdf.line(margin + i * cellW, ratingTop, margin + i * cellW, ratingTop + ratingHeight);
+  pdf.rect(margin, y + ratingHeight / 2, ratingWidth, ratingHeight / 2, "FD");
+
+  for (let index = 0; index <= 6; index++) {
+    pdf.line(
+      margin + index * cellWidth,
+      y,
+      margin + index * cellWidth,
+      y + ratingHeight
+    );
   }
-  pdf.line(
-    margin,
-    ratingTop + ratingHeight / 2,
-    margin + ratingWidth,
-    ratingTop + ratingHeight / 2
-  );
+
+  pdf.line(margin, y + ratingHeight / 2, margin + ratingWidth, y + ratingHeight / 2);
 
   pdf.setFontSize(6.5);
   pdf.setTextColor(...PDF_PURPLE);
-  ranges.forEach((label, i) => {
-    pdf.text(label, margin + i * cellW + cellW / 2, ratingTop + 4.5, { align: "center" });
-  });
-  pdf.setFontSize(9);
-  pdf.setTextColor(40, 40, 40);
-  keys.forEach((label, i) => {
-    pdf.text(label, margin + i * cellW + cellW / 2, ratingTop + ratingHeight - 2.5, {
+
+  ranges.forEach((label, index) => {
+    pdf.text(label, margin + index * cellWidth + cellWidth / 2, y + 4.5, {
       align: "center",
     });
   });
 
-  y = ratingTop + ratingHeight + 8;
+  pdf.setFontSize(9);
+  pdf.setTextColor(40, 40, 40);
+
+  keys.forEach((label, index) => {
+    pdf.text(
+      label,
+      margin + index * cellWidth + cellWidth / 2,
+      y + ratingHeight - 2.5,
+      { align: "center" }
+    );
+  });
+
+  y += ratingHeight + 9;
+
+  if (y > pageHeight - 55) {
+    pdf.addPage();
+    y = 20;
+  }
+
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(...PDF_PURPLE);
+
   pdf.text("Teacher's Comment:", margin + 2, y);
+
   y += 4;
+
   pdf.setFont("helvetica", "normal");
   pdf.setTextColor(50, 50, 50);
-  const tutorLines = pdf.splitTextToSize(yearTutorComment, pageWidth - margin * 2);
+
+  const tutorLines = pdf.splitTextToSize(
+    yearTutorComment,
+    pageWidth - margin * 2
+  );
+
   pdf.text(tutorLines, margin + 2, y);
+
   y += tutorLines.length * 3.8 + 5;
 
   pdf.setFont("helvetica", "bold");
   pdf.setTextColor(...PDF_PURPLE);
+
   pdf.text("Principal/Headmaster's Comment:", margin + 2, y);
+
   y += 4;
+
   pdf.setFont("helvetica", "normal");
   pdf.setTextColor(50, 50, 50);
-  const adminLines = pdf.splitTextToSize(adminComment, pageWidth - margin * 2);
+
+  const adminLines = pdf.splitTextToSize(
+    adminComment,
+    pageWidth - margin * 2
+  );
+
   pdf.text(adminLines, margin + 2, y);
+
   y += adminLines.length * 3.8 + 8;
 
-  const stampW = 28;
-  let stampH = 18;
+  const stampWidth = 28;
+  let stampHeight = 18;
+
   if (stampData) {
     try {
-      const props = pdf.getImageProperties(stampData);
-      stampH = Math.min(stampW / (props.width / props.height), 22);
+      const properties = pdf.getImageProperties(stampData);
+
+      stampHeight = Math.min(
+        stampWidth / (properties.width / properties.height),
+        22
+      );
     } catch {
-      stampH = 18;
+      stampHeight = 18;
     }
   }
-  if (y + stampH + 16 > pageHeight - 10) {
+
+  if (y + stampHeight + 16 > pageHeight - 10) {
     pdf.addPage();
     y = 20;
   } else {
-    y += 8;
+    y += 5;
   }
 
-  const lineWidth = 55;
-  const lineX = pageWidth - margin - lineWidth;
-  const lineY = y + (stampData ? stampH + 2 : 0) + 4;
-  const stampX = lineX + (lineWidth - stampW) / 2;
-  const stampY = lineY - stampH - 1;
+  const signatureWidth = 55;
+  const signatureX = pageWidth - margin - signatureWidth;
+  const signatureY = y + (stampData ? stampHeight + 2 : 0) + 4;
+
+  const stampX = signatureX + (signatureWidth - stampWidth) / 2;
+  const stampY = signatureY - stampHeight - 1;
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(...PDF_PURPLE);
-  pdf.text("Head Teacher", lineX + lineWidth / 2, stampY - 3, { align: "center" });
+
+  pdf.text("Head Teacher", signatureX + signatureWidth / 2, stampY - 3, {
+    align: "center",
+  });
 
   if (stampData) {
     try {
-      pdf.addImage(stampData, "PNG", stampX, stampY, stampW, stampH);
-    } catch (e) {
-      console.warn(e);
+      pdf.addImage(
+        stampData,
+        "PNG",
+        stampX,
+        stampY,
+        stampWidth,
+        stampHeight
+      );
+    } catch (error) {
+      console.warn(error);
     }
   }
 
   pdf.setDrawColor(...PDF_PURPLE);
   pdf.setLineWidth(0.5);
-  pdf.line(lineX, lineY, lineX + lineWidth, lineY);
+
+  pdf.line(signatureX, signatureY, signatureX + signatureWidth, signatureY);
+
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(7);
   pdf.setTextColor(100, 100, 100);
-  pdf.text("Signature / Stamp", lineX + lineWidth / 2, lineY + 4, { align: "center" });
 
-  pdf.save(
-    `${student.admissionNumber || "result"}-${String(result.term)
-      .replaceAll(" ", "-")
-      .toLowerCase()}.pdf`
+  pdf.text(
+    "Signature / Stamp",
+    signatureX + signatureWidth / 2,
+    signatureY + 4,
+    { align: "center" }
   );
+
+  const studentFileName = safeFileName(student.name);
+  const admissionNumber = safeFileName(student.admissionNumber);
+  const termName = safeFileName(result.term || "Result");
+
+  const fileName = [studentFileName, admissionNumber, termName, "Result"]
+    .filter(Boolean)
+    .join("_");
+
+  pdf.save(`${fileName}.pdf`);
 }
 
 function ProfilePage({ student, results, performance }) {
@@ -670,6 +1307,7 @@ function ProfilePage({ student, results, performance }) {
           <h1>Welcome, {student.name?.split(" ")[0]}</h1>
           <p>Here is your profile and academic overview.</p>
         </div>
+
         <span className="class-pill">{formatClass(student)}</span>
       </div>
 
@@ -682,15 +1320,21 @@ function ProfilePage({ student, results, performance }) {
               initials(student.name)
             )}
           </div>
+
           <div>
             <h2>{student.name}</h2>
             <p>{student.admissionNumber}</p>
+
             <span className="profile-status">
               <i />
-              {(student.status || "Active").replace(/^\w/, (c) => c.toUpperCase())} Student
+              {(student.status || "Active").replace(/^\w/, (c) =>
+                c.toUpperCase()
+              )}{" "}
+              Student
             </span>
           </div>
         </div>
+
         <div className="profile-details">
           {details.map(([label, value]) => (
             <div className="profile-detail" key={label}>
@@ -707,27 +1351,41 @@ function ProfilePage({ student, results, performance }) {
             <p className="eyebrow">ACADEMIC RECORDS</p>
             <h2>Term Results</h2>
           </div>
-          <span className="section-caption">Select a term to view your report</span>
+
+          <span className="section-caption">
+            Select a term to view your report
+          </span>
         </div>
+
         <div className="term-result-grid">
           {Object.entries(results).map(([key, result]) => (
             <button
               key={key}
               type="button"
-              className={`term-result-card ${!result.uploaded ? "term-result-unavailable" : ""}`}
+              className={`term-result-card ${
+                !result.uploaded ? "term-result-unavailable" : ""
+              }`}
               disabled={!result.uploaded}
               onClick={() => {
-                if (result.uploaded) navigateTo(`/student/results/${key}`);
+                if (result.uploaded) {
+                  navigateTo(`/student/results/${key}`);
+                }
               }}
             >
               <span className="term-icon">▤</span>
+
               <span className="term-card-copy">
                 <strong>{result.label}</strong>
                 <small>
-                  {result.uploaded ? "View result and download PDF" : "Yet to be uploaded"}
+                  {result.uploaded
+                    ? "View result and download PDF"
+                    : "Yet to be uploaded"}
                 </small>
               </span>
-              <span className="term-arrow">{result.uploaded ? "→" : "—"}</span>
+
+              <span className="term-arrow">
+                {result.uploaded ? "→" : "—"}
+              </span>
             </button>
           ))}
         </div>
@@ -739,8 +1397,10 @@ function ProfilePage({ student, results, performance }) {
             <p className="eyebrow">YOUR PROGRESS</p>
             <h2>Academic Performance</h2>
           </div>
+
           <span className="section-caption">Average score by term</span>
         </div>
+
         <div className="student-panel">
           <PerformanceGraph performance={performance} />
         </div>
@@ -750,8 +1410,11 @@ function ProfilePage({ student, results, performance }) {
         <div>
           <p className="eyebrow">SCHOOL RECORD</p>
           <h2>Attendance</h2>
-          <p>Attendance records will be available here in a future update.</p>
+          <p>
+            Attendance records will be available here in a future update.
+          </p>
         </div>
+
         <button className="secondary-button" type="button" disabled>
           Coming later
         </button>
@@ -773,18 +1436,24 @@ function ResultPage({ term, student, results, studentsInClass }) {
         >
           ← Back to profile
         </button>
+
         <div className="empty-result">
           <div className="empty-result-icon">▤</div>
           <h1>Yet to be uploaded</h1>
-          <p>This result is not available yet. Please check again later.</p>
+          <p>
+            This result is not available yet. Please check again later.
+          </p>
         </div>
       </main>
     );
   }
 
   const summary = getResultSummary(result, student.currentClass);
+
   const adminComment = getAutomaticAdminComment(summary.terminalAverage);
-  const yearTutorComment = getAutomaticYearTutorComment(summary.terminalAverage);
+  const yearTutorComment = getAutomaticYearTutorComment(
+    summary.terminalAverage
+  );
 
   return (
     <main className="student-main">
@@ -802,10 +1471,13 @@ function ResultPage({ term, student, results, studentsInClass }) {
           <h1>{result.label}</h1>
           <p>{result.academicYear}</p>
         </div>
+
         <button
           className="primary-button"
           type="button"
-          onClick={() => downloadResultPDF(student, result, studentsInClass)}
+          onClick={() =>
+            downloadResultPDF(student, result, studentsInClass)
+          }
         >
           ↓ Download PDF
         </button>
@@ -816,22 +1488,27 @@ function ResultPage({ term, student, results, studentsInClass }) {
           <span>Student</span>
           <strong>{student.name}</strong>
         </div>
+
         <div>
           <span>Admission number</span>
           <strong>{student.admissionNumber}</strong>
         </div>
+
         <div>
           <span>Class</span>
           <strong>{formatClass(student)}</strong>
         </div>
+
         <div>
           <span>No. in Class</span>
           <strong>{studentsInClass}</strong>
         </div>
+
         <div>
           <span>Term</span>
           <strong>{result.term}</strong>
         </div>
+
         <div>
           <span>Session</span>
           <strong>{result.academicYear}</strong>
@@ -853,32 +1530,71 @@ function ResultPage({ term, student, results, studentsInClass }) {
                 <th>Subjects</th>
                 <th>CA / 40</th>
                 <th>Exam / 60</th>
-                <th>Percentage (%)</th>
+                <th>Total / 100</th>
+                <th>Percentage</th>
                 <th>Grade</th>
                 <th>Remark</th>
               </tr>
             </thead>
+
             <tbody>
-              {summary.subjects.map((subject) => (
-                <tr key={subject.name}>
+              {summary.subjects.map((subject, index) => (
+                <tr
+                  key={
+                    subject._id ||
+                    subject.subjectCode ||
+                    `${subject.name}-${index}`
+                  }
+                >
                   <td>{String(subject.name).toUpperCase()}</td>
-                  <td>{subject.ca}/40</td>
-                  <td>{subject.exam}/60</td>
-                  <td>{subject.percentage.toFixed(0)}%</td>
+
                   <td>
-                    <span className="grade-pill">{subject.grade}</span>
+                    {subject.caSubmitted
+                      ? `${subject.ca}/40`
+                      : "Yet to be uploaded"}
                   </td>
-                  <td>{subject.remark}</td>
+
+                  <td>
+                    {subject.examSubmitted
+                      ? `${subject.exam}/60`
+                      : subject.examNotTaken
+                        ? "Not Taken"
+                        : "Yet to be uploaded"}
+                  </td>
+
+                  <td>
+                    {subject.total !== null
+                      ? `${subject.total}/100`
+                      : "Pending"}
+                  </td>
+
+                  <td>
+                    {subject.percentage !== null
+                      ? `${subject.percentage.toFixed(2)}%`
+                      : "Pending"}
+                  </td>
+
+                  <td>
+                    {subject.grade ? (
+                      <span className="grade-pill">{subject.grade}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+
+                  <td>{subject.remark || "—"}</td>
                 </tr>
               ))}
 
               <tr className="result-summary-row">
                 <td colSpan={2}>
-                  <strong>TOTAL</strong>
+                  <strong>TOTAL OF COMPLETED SUBJECTS</strong>
                 </td>
-                <td>
+
+                <td colSpan={2}>
                   <strong>{summary.totalScore.toFixed(2)}</strong>
                 </td>
+
                 <td colSpan={3} />
               </tr>
 
@@ -886,20 +1602,52 @@ function ResultPage({ term, student, results, studentsInClass }) {
                 <td colSpan={2}>
                   <strong>SUBJECTS OFFERED</strong>
                 </td>
+
                 <td>
                   <strong>{summary.subjectsOffered}</strong>
                 </td>
-                <td colSpan={3} />
+
+                <td colSpan={4} />
+              </tr>
+
+              <tr className="result-summary-row">
+                <td colSpan={2}>
+                  <strong>COMPLETED SUBJECTS</strong>
+                </td>
+
+                <td>
+                  <strong>{summary.completedSubjects}</strong>
+                </td>
+
+                <td colSpan={4} />
+              </tr>
+
+              <tr className="result-summary-row">
+                <td colSpan={2}>
+                  <strong>PENDING SUBJECTS</strong>
+                </td>
+
+                <td>
+                  <strong>{summary.pendingSubjects}</strong>
+                </td>
+
+                <td colSpan={4} />
               </tr>
 
               <tr className="result-summary-row result-summary-aggregate">
                 <td colSpan={3}>
-                  <strong>PERCENTAGE AGGREGATE</strong>
+                  <strong>AVERAGE OF COMPLETED SUBJECTS</strong>
                 </td>
+
                 <td>
-                  <strong>{summary.terminalAverage.toFixed(2)}%</strong>
+                  <strong>
+                    {summary.terminalAverage !== null
+                      ? `${summary.terminalAverage.toFixed(2)}%`
+                      : "Pending"}
+                  </strong>
                 </td>
-                <td colSpan={2} />
+
+                <td colSpan={3} />
               </tr>
             </tbody>
           </table>
@@ -907,6 +1655,7 @@ function ResultPage({ term, student, results, studentsInClass }) {
 
         <div className="result-rating-table-wrap">
           <p className="result-rating-title">RATING</p>
+
           <table className="result-rating-table">
             <thead>
               <tr>
@@ -918,6 +1667,7 @@ function ResultPage({ term, student, results, studentsInClass }) {
                 <th>0 – 39.99</th>
               </tr>
             </thead>
+
             <tbody>
               <tr>
                 <td>A</td>
@@ -929,6 +1679,7 @@ function ResultPage({ term, student, results, studentsInClass }) {
               </tr>
             </tbody>
           </table>
+
           <p className="result-rating-key-label">KEY</p>
         </div>
 
@@ -937,6 +1688,7 @@ function ResultPage({ term, student, results, studentsInClass }) {
             <strong>Teacher&apos;s Comment</strong>
             <p>{yearTutorComment}</p>
           </div>
+
           <div className="result-comment">
             <strong>Principal / Headmaster&apos;s Comment</strong>
             <p>{adminComment}</p>
@@ -952,26 +1704,71 @@ export default function StudentDashboard() {
   const [academic, setAcademic] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState(
+    () => readStoredAcademicYear()
+  );
+  const [availableSessions, setAvailableSessions] = useState(DEFAULT_SESSIONS);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
 
   const currentPath = window.location.pathname;
   const resultPrefix = "/student/results/";
+
   const isResultPage = currentPath.startsWith(resultPrefix);
+
   const term = isResultPage
     ? currentPath.slice(resultPrefix.length).replace(/\/+$/, "")
     : null;
 
+  // Persist session so /student/results/* does not snap back to default year
   useEffect(() => {
+    writeStoredAcademicYear(selectedAcademicYear);
+  }, [selectedAcademicYear]);
+
+  // Close session menu on outside click
+  useEffect(() => {
+    if (!sessionMenuOpen) return undefined;
+
+    const handleOutside = () => setSessionMenuOpen(false);
+    const timer = window.setTimeout(() => {
+      document.addEventListener("click", handleOutside);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("click", handleOutside);
+    };
+  }, [sessionMenuOpen]);
+
+  // Load profile once, then reload results whenever the session changes
+  useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
+      setLoading(true);
+      setError("");
+
       try {
         const profileRes = await api.get("/students/profile/me", {
-          params: { academicYear: CURRENT_ACADEMIC_YEAR },
+          params: {
+            academicYear: selectedAcademicYear,
+          },
         });
-        const me = profileRes.data?.profile;
-        if (!me) throw new Error("Student profile was not returned by the server.");
-        const id = me.id || me._id;
-        if (!id) throw new Error("Student ID was not returned by the profile endpoint.");
 
-        setStudent({
+        const me = profileRes.data?.profile;
+
+        if (!me) {
+          throw new Error("Student profile was not returned by the server.");
+        }
+
+        const id = me.id || me._id;
+
+        if (!id) {
+          throw new Error(
+            "Student ID was not returned by the profile endpoint."
+          );
+        }
+
+        const studentData = {
           id,
           name:
             me.name ||
@@ -989,43 +1786,157 @@ export default function StudentDashboard() {
           email: me.email,
           profileImage: me.profileImage || "",
           status: me.status || "active",
-        });
+        };
 
-        const terms = ["First Term", "Second Term", "Third Term"];
-        const termResponses = await Promise.all(
-          terms.map(async (termName) => {
+        if (cancelled) return;
+
+        setStudent(studentData);
+
+        // Probe known sessions so the picker lists years that have data
+        const yearsToProbe = [
+          ...new Set([
+            ...DEFAULT_SESSIONS,
+            selectedAcademicYear,
+            CURRENT_ACADEMIC_YEAR,
+            "2025/2026",
+            "2026/2027",
+          ]),
+        ];
+
+        const probeResults = await Promise.all(
+          yearsToProbe.map(async (year) => {
             try {
-              const response = await api.get(`/grades/student/${id}/academic-profile`, {
-                params: { academicYear: CURRENT_ACADEMIC_YEAR, term: termName },
-              });
-              return { term: termName, data: response.data };
-            } catch (err) {
-              console.error(termName, err.response?.data || err.message);
-              return { term: termName, data: null };
+              const response = await api.get(
+                `/grades/student/${id}/academic-profile`,
+                {
+                  params: {
+                    academicYear: year,
+                    term: "First Term",
+                  },
+                }
+              );
+              const summary = response.data?.reportCardSummary;
+              const hasData =
+                Array.isArray(summary) && summary.length > 0
+                  ? true
+                  : Boolean(response.data);
+              return {
+                year,
+                hasData:
+                  hasData ||
+                  response.data?.academicYear === year ||
+                  Boolean(response.data),
+                data: response.data,
+              };
+            } catch {
+              return { year, hasData: false, data: null };
             }
           })
         );
 
-        const successful = termResponses.filter((i) => i.data);
-        setAcademic(successful.length ? mergeTermAcademicResponses(successful) : null);
-      } catch (err) {
-        console.error(err);
-        setError(
-          err.response?.data?.message ||
-            err.message ||
-            "Unable to load your profile. Please log in again."
+        if (cancelled) return;
+
+        const yearsWithAnyResponse = probeResults
+          .filter((item) => item.data)
+          .map((item) => item.year);
+
+        setAvailableSessions((current) => {
+          const merged = new Set([
+            ...current,
+            ...DEFAULT_SESSIONS,
+            ...yearsWithAnyResponse,
+            selectedAcademicYear,
+          ]);
+          return [...merged].filter(Boolean).sort();
+        });
+
+        // Full term load for the selected session
+        const termResponses = await Promise.all(
+          TERMS.map(async ({ term: termName }) => {
+            // Some backends accept "First Term", others "first" / "First"
+            const termAttempts = [
+              termName,
+              termName.replace(" Term", ""),
+              termName.split(" ")[0].toLowerCase(),
+            ];
+
+            for (const termParam of termAttempts) {
+              try {
+                const response = await api.get(
+                  `/grades/student/${id}/academic-profile`,
+                  {
+                    params: {
+                      academicYear: selectedAcademicYear,
+                      term: termParam,
+                    },
+                  }
+                );
+
+                if (response.data) {
+                  return {
+                    term: termName,
+                    data: response.data,
+                  };
+                }
+              } catch (err) {
+                console.error(
+                  `${termName} (${termParam}):`,
+                  err.response?.data || err.message
+                );
+              }
+            }
+
+            return {
+              term: termName,
+              data: null,
+            };
+          })
         );
+
+        if (cancelled) return;
+
+        const successful = termResponses.filter((item) => item.data);
+
+        setAcademic(
+          successful.length
+            ? mergeTermAcademicResponses(successful, selectedAcademicYear)
+            : {
+                academicYear: selectedAcademicYear,
+                reportCardSummary: [],
+                termResponses: termResponses,
+                classSize: null,
+              }
+        );
+      } catch (err) {
+        console.error("Student dashboard error:", err);
+
+        if (!cancelled) {
+          setError(
+            err.response?.data?.message ||
+              err.message ||
+              "Unable to load your profile. Please log in again."
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
+
     fetchData();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAcademicYear]);
 
   if (loading) {
     return (
       <div className="student-app">
-        <div style={{ padding: 48, textAlign: "center" }}>Loading your portal...</div>
+        <div style={{ padding: 48, textAlign: "center" }}>
+          Loading your portal...
+        </div>
       </div>
     );
   }
@@ -1034,7 +1945,10 @@ export default function StudentDashboard() {
     return (
       <div className="student-app">
         <div style={{ padding: 48, textAlign: "center" }}>
-          <p style={{ marginBottom: 16 }}>{error || "Profile not found"}</p>
+          <p style={{ marginBottom: 16 }}>
+            {error || "Profile not found"}
+          </p>
+
           <button
             className="primary-button"
             type="button"
@@ -1050,22 +1964,27 @@ export default function StudentDashboard() {
     );
   }
 
-  const results = buildTermResults(academic);
+  const results = buildTermResults(academic, selectedAcademicYear);
+
   const studentsInClass =
-    academic?.classSize ?? academic?.noInClass ?? academic?.studentsInClass ?? "—";
+    academic?.classSize ??
+    academic?.noInClass ??
+    academic?.studentsInClass ??
+    "—";
 
   const performance = [];
+
   ["first", "second", "third"].forEach((key, index) => {
     const result = results[key];
+
     if (result?.uploaded) {
       const summary = getResultSummary(result, student.currentClass);
-      const score = Number(
-        result.average || result.terminalAverage || summary.terminalAverage || 0
-      );
-      if (score > 0) {
+
+      if (summary.terminalAverage !== null) {
         performance.push({
-          term: index === 0 ? "First" : index === 1 ? "Second" : "Third",
-          score: Number(score.toFixed(1)),
+          term:
+            index === 0 ? "First" : index === 1 ? "Second" : "Third",
+          score: Number(summary.terminalAverage.toFixed(1)),
         });
       }
     }
@@ -1075,8 +1994,27 @@ export default function StudentDashboard() {
     <div className="student-app">
       <StudentHeader
         student={student}
-        academicYear={academic?.academicYear || CURRENT_ACADEMIC_YEAR}
+        academicYear={selectedAcademicYear}
+        availableSessions={availableSessions}
+        sessionMenuOpen={sessionMenuOpen}
+        onToggleSessionMenu={() =>
+          setSessionMenuOpen((open) => !open)
+        }
+        onSelectSession={(year) => {
+          const clean = String(year || "").trim();
+          if (!clean || clean === selectedAcademicYear) {
+            setSessionMenuOpen(false);
+            return;
+          }
+          setSessionMenuOpen(false);
+          setSelectedAcademicYear(clean);
+          // Stay on profile when switching year so term cards reload cleanly
+          if (window.location.pathname.startsWith("/student/results/")) {
+            navigateTo("/student/dashboard");
+          }
+        }}
       />
+
       {isResultPage ? (
         <ResultPage
           term={term}
@@ -1085,8 +2023,13 @@ export default function StudentDashboard() {
           studentsInClass={studentsInClass}
         />
       ) : (
-        <ProfilePage student={student} results={results} performance={performance} />
+        <ProfilePage
+          student={student}
+          results={results}
+          performance={performance}
+        />
       )}
+
       <footer className="student-footer">
         © {new Date().getFullYear()} O&apos;lak Triumph School
       </footer>

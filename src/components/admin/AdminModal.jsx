@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
 import FormField from "./FormField";
@@ -25,14 +25,12 @@ function AdminModal({
   scoreForm,
   setScoreForm,
   addScore,
+  submitComponentScores,
 
   scoreClass,
   scoreDepartment,
   scoreStudents,
   scoreSubjects,
-  scoreCA,
-  scoreTotal,
-  liveGrade,
 
   departments,
   secondaryClasses,
@@ -40,6 +38,162 @@ function AdminModal({
   subjectAssignmentOptions,
   requiresDepartment,
 }) {
+  const [scoreType, setScoreType] = useState("CA");
+  const [scoreRows, setScoreRows] = useState([]);
+
+  // Load all subjects assigned to the selected class.
+  useEffect(() => {
+    setScoreRows(
+      (scoreSubjects || []).map((subject) => ({
+        subject: subject.id || subject._id,
+        subjectName: subject.name || subject.subjectName || "",
+        subjectCode: subject.code || subject.subjectCode || "",
+        test1: "",
+        test2: "",
+        notes: "",
+        oral: "",
+        exam: "",
+      }))
+    );
+  }, [scoreSubjects, scoreForm.student]);
+
+  const updateScoreRow = (subjectId, field, value) => {
+    setScoreRows((previousRows) =>
+      previousRows.map((row) =>
+        row.subject === subjectId
+          ? { ...row, [field]: value }
+          : row
+      )
+    );
+  };
+
+  // Keep blank scores blank. A score of zero is still valid.
+  const getNumber = (value) => {
+    if (
+      value === "" ||
+      value === null ||
+      value === undefined
+    ) {
+      return null;
+    }
+
+    return Number(value);
+  };
+
+  const hasValue = (value) =>
+    value !== "" && value !== null && value !== undefined;
+
+  const getCATotal = (row) => {
+    return (
+      (getNumber(row.test1) ?? 0) +
+      (getNumber(row.test2) ?? 0) +
+      (getNumber(row.notes) ?? 0) +
+      (getNumber(row.oral) ?? 0)
+    );
+  };
+
+  const hasCAEntry = (row) =>
+    hasValue(row.test1) ||
+    hasValue(row.test2) ||
+    hasValue(row.notes) ||
+    hasValue(row.oral);
+
+  const hasCompleteCA = (row) =>
+    hasValue(row.test1) &&
+    hasValue(row.test2) &&
+    hasValue(row.notes) &&
+    hasValue(row.oral);
+
+  const handleStudentChange = (e) => {
+    setScoreForm({
+      ...scoreForm,
+      student: e.target.value,
+      subject: "",
+    });
+  };
+
+  const handleScoreTypeChange = (e) => {
+    setScoreType(e.target.value);
+  };
+
+  // Submit only subjects and score components that have values.
+  const handleScoreSubmit = (e) => {
+    e.preventDefault();
+
+    if (!scoreForm.student) {
+      alert("Please select a student.");
+      return;
+    }
+
+    if (!scoreRows.length) {
+      alert("No subjects are available for this class.");
+      return;
+    }
+
+    const scores = scoreRows
+      .map((row) => {
+        if (scoreType === "CA") {
+          const score = {
+            subject: row.subject,
+          };
+
+          if (hasValue(row.test1)) {
+            score.test1 = getNumber(row.test1);
+          }
+
+          if (hasValue(row.test2)) {
+            score.test2 = getNumber(row.test2);
+          }
+
+          if (hasValue(row.notes)) {
+            score.notes = getNumber(row.notes);
+          }
+
+          if (hasValue(row.oral)) {
+            score.oral = getNumber(row.oral);
+          }
+
+          return hasCAEntry(row) ? score : null;
+        }
+
+        if (!hasValue(row.exam)) {
+          return null;
+        }
+
+        return {
+          subject: row.subject,
+          exam: getNumber(row.exam),
+        };
+      })
+      .filter(Boolean);
+
+    if (scores.length === 0) {
+      alert(
+        scoreType === "CA"
+          ? "Please enter at least one CA score before submitting."
+          : "Please enter at least one examination score before submitting."
+      );
+      return;
+    }
+
+    const payload = {
+      student: scoreForm.student,
+      term: scoreForm.term,
+      academicYear: scoreForm.academicYear,
+      noInClass: scoreForm.noInClass,
+      componentType: scoreType,
+      scores,
+    };
+
+    if (submitComponentScores) {
+      submitComponentScores(e, payload);
+    } else if (addScore) {
+      addScore(e, payload);
+    } else {
+      alert("The score submission function has not been connected.");
+    }
+  };
+
   if (!modal) return null;
 
   return (
@@ -67,7 +221,7 @@ function AdminModal({
                   : "Add a subject"
                 : modal === "enrollment"
                 ? "Enroll a student"
-                : "Submit a score"}
+                : "Submit student scores"}
             </h3>
           </div>
 
@@ -163,10 +317,7 @@ function AdminModal({
                 }
               >
                 {secondaryClasses.map((className) => (
-                  <option
-                    key={className}
-                    value={className}
-                  >
+                  <option key={className} value={className}>
                     {className}
                   </option>
                 ))}
@@ -186,10 +337,7 @@ function AdminModal({
                   }
                 >
                   {departments.map((department) => (
-                    <option
-                      key={department}
-                      value={department}
-                    >
+                    <option key={department} value={department}>
                       {department}
                     </option>
                   ))}
@@ -276,47 +424,42 @@ function AdminModal({
                   marginTop: 10,
                 }}
               >
-                {subjectAssignmentOptions.map(
-                  (assignment) => {
-                    const checked =
-                      subjectForm.classAssignments.some(
-                        (item) =>
-                          item.className ===
-                            assignment.className &&
-                          (item.department || null) ===
-                            (assignment.department || null)
-                      );
-
-                    const label = assignment.department
-                      ? `${assignment.className} — ${assignment.department}`
-                      : assignment.className;
-
-                    return (
-                      <label
-                        key={`${assignment.className}-${
-                          assignment.department || "all"
-                        }`}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            toggleSubjectAssignment(
-                              assignment
-                            )
-                          }
-                        />
-
-                        <span>{label}</span>
-                      </label>
+                {subjectAssignmentOptions.map((assignment) => {
+                  const checked =
+                    subjectForm.classAssignments.some(
+                      (item) =>
+                        item.className === assignment.className &&
+                        (item.department || null) ===
+                          (assignment.department || null)
                     );
-                  }
-                )}
+
+                  const label = assignment.department
+                    ? `${assignment.className} — ${assignment.department}`
+                    : assignment.className;
+
+                  return (
+                    <label
+                      key={`${assignment.className}-${
+                        assignment.department || "all"
+                      }`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          toggleSubjectAssignment(assignment)
+                        }
+                      />
+
+                      <span>{label}</span>
+                    </label>
+                  );
+                })}
               </div>
 
               <p className="admin-classification-note">
@@ -367,19 +510,14 @@ function AdminModal({
                 }
               >
                 {enrollmentClassOptions.map((className) => (
-                  <option
-                    key={className}
-                    value={className}
-                  >
+                  <option key={className} value={className}>
                     {className}
                   </option>
                 ))}
               </select>
             </FormField>
 
-            {requiresDepartment(
-              enrollmentForm.className
-            ) && (
+            {requiresDepartment(enrollmentForm.className) && (
               <FormField label="Department">
                 <select
                   required
@@ -391,15 +529,10 @@ function AdminModal({
                     })
                   }
                 >
-                  <option value="">
-                    Select department
-                  </option>
+                  <option value="">Select department</option>
 
                   {departments.map((department) => (
-                    <option
-                      key={department}
-                      value={department}
-                    >
+                    <option key={department} value={department}>
                       {department}
                     </option>
                   ))}
@@ -430,10 +563,10 @@ function AdminModal({
           </form>
         )}
 
-        {/* SUBMIT SCORE */}
+        {/* SUBMIT CA OR EXAM SCORES */}
 
         {modal === "score" && (
-          <form onSubmit={addScore}>
+          <form onSubmit={handleScoreSubmit}>
             <div className="admin-score-class-summary">
               <strong>{scoreClass}</strong>
 
@@ -442,51 +575,20 @@ function AdminModal({
               )}
             </div>
 
-            <FormField label="Student">
+            <FormField label="Select student">
               <select
                 required
-                value={scoreForm.student}
-                onChange={(e) =>
-                  setScoreForm({
-                    ...scoreForm,
-                    student: e.target.value,
-                    subject: "",
-                  })
-                }
+                value={scoreForm.student || ""}
+                onChange={handleStudentChange}
               >
                 <option value="">Select a student</option>
 
-                {scoreStudents.map((student) => (
+                {(scoreStudents || []).map((student) => (
                   <option
-                    key={student.id}
-                    value={student.id}
+                    key={student.id || student._id}
+                    value={student.id || student._id}
                   >
-                    {student.name} (
-                    {student.admissionNumber})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Subject">
-              <select
-                required
-                value={scoreForm.subject}
-                onChange={(e) =>
-                  setScoreForm({
-                    ...scoreForm,
-                    subject: e.target.value,
-                  })
-                }
-              >
-                <option value="">Select a subject</option>
-
-                {scoreSubjects.map((subject) => (
-                  <option
-                    key={subject.id}
-                    value={subject.id}
-                  >
-                    {subject.name} ({subject.code})
+                    {student.name} ({student.admissionNumber})
                   </option>
                 ))}
               </select>
@@ -520,70 +622,212 @@ function AdminModal({
                       academicYear: e.target.value,
                     })
                   }
-                  placeholder="2025/2026"
+                  placeholder="2026/2027"
                 />
               </FormField>
             </div>
 
-            <div className="admin-score-section-heading">
-              <strong>CONTINUOUS ASSESSMENT</strong>
-              <span>Maximum: 40 marks</span>
-            </div>
+            <div className="admin-form-field">
+              <label htmlFor="score-component">
+                Select score component
+              </label>
 
-            <div className="admin-form-two">
-              {[
-                ["test1", "First test (0–10)"],
-                ["test2", "Second test (0–10)"],
-                ["test3", "Third test (0–10)"],
-                ["assignment", "Assignment (0–10)"],
-              ].map(([field, label]) => (
-                <FormField label={label} key={field}>
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    max="10"
-                    step="0.01"
-                    value={scoreForm[field]}
-                    onChange={(e) =>
-                      setScoreForm({
-                        ...scoreForm,
-                        [field]: e.target.value,
-                      })
-                    }
-                  />
-                </FormField>
-              ))}
+              <select
+                id="score-component"
+                value={scoreType}
+                onChange={handleScoreTypeChange}
+              >
+                <option value="CA">
+                  Continuous Assessment (40 marks)
+                </option>
+                <option value="Exam">
+                  Examination (60 marks)
+                </option>
+              </select>
             </div>
 
             <div className="admin-score-section-heading">
-              <strong>EXAMINATION</strong>
-              <span>Maximum: 60 marks</span>
+              <strong>
+                {scoreType === "CA"
+                  ? "CONTINUOUS ASSESSMENT"
+                  : "EXAMINATION SCORES"}
+              </strong>
+
+              <span>
+                {scoreType === "CA"
+                  ? "Maximum: 40 marks"
+                  : "Maximum: 60 marks"}
+              </span>
             </div>
 
-            <FormField label="Examination score (0–60)">
-              <input
-                required
-                type="number"
-                min="0"
-                max="60"
-                step="0.01"
-                value={scoreForm.exam}
-                onChange={(e) =>
-                  setScoreForm({
-                    ...scoreForm,
-                    exam: e.target.value,
-                  })
-                }
-              />
-            </FormField>
+            {!scoreForm.student ? (
+              <p className="admin-classification-note">
+                Select a student to load their subjects.
+              </p>
+            ) : scoreRows.length === 0 ? (
+              <p className="admin-classification-note">
+                No subjects are currently assigned to this
+                class or department.
+              </p>
+            ) : (
+              <div
+                className="admin-score-subject-list"
+                style={{
+                  display: "grid",
+                  gap: 18,
+                  marginTop: 16,
+                }}
+              >
+                {scoreRows.map((row, index) => (
+                  <div
+                    key={row.subject}
+                    className="admin-score-subject-card"
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      padding: 16,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        marginBottom: 14,
+                      }}
+                    >
+                      <strong>
+                        {index + 1}. {row.subjectName}
+                      </strong>
+
+                      <span>{row.subjectCode}</span>
+                    </div>
+
+                    {scoreType === "CA" ? (
+                      <>
+                        <div className="admin-form-two">
+                          <FormField label="Test 1 (0–10)">
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.01"
+                              value={row.test1}
+                              onChange={(e) =>
+                                updateScoreRow(
+                                  row.subject,
+                                  "test1",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </FormField>
+
+                          <FormField label="Test 2 (0–20)">
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              step="0.01"
+                              value={row.test2}
+                              onChange={(e) =>
+                                updateScoreRow(
+                                  row.subject,
+                                  "test2",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </FormField>
+
+                          <FormField label="Notes (0–5)">
+                            <input
+                              type="number"
+                              min="0"
+                              max="5"
+                              step="0.01"
+                              value={row.notes}
+                              onChange={(e) =>
+                                updateScoreRow(
+                                  row.subject,
+                                  "notes",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </FormField>
+
+                          <FormField label="Oral (0–5)">
+                            <input
+                              type="number"
+                              min="0"
+                              max="5"
+                              step="0.01"
+                              value={row.oral}
+                              onChange={(e) =>
+                                updateScoreRow(
+                                  row.subject,
+                                  "oral",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </FormField>
+                        </div>
+
+                        <div className="admin-score-calculation">
+                          <div>
+                            <span>
+                              {hasCAEntry(row)
+                                ? "Entered score total so far"
+                                : "No CA scores entered"}
+                            </span>
+
+                            <strong>
+                              {hasCAEntry(row)
+                                ? `${getCATotal(row).toFixed(2)} / 40`
+                                : "—"}
+                            </strong>
+                          </div>
+
+                          {hasCAEntry(row) && (
+                            <span className="admin-classification-note">
+                              {hasCompleteCA(row)
+                                ? "All CA components entered"
+                                : "CA is still incomplete"}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <FormField label="Examination score (0–60)">
+                        <input
+                          type="number"
+                          min="0"
+                          max="60"
+                          step="0.01"
+                          value={row.exam}
+                          onChange={(e) =>
+                            updateScoreRow(
+                              row.subject,
+                              "exam",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </FormField>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <FormField label="Manual class position (optional)">
               <input
                 type="number"
                 min="1"
                 step="1"
-                value={scoreForm.noInClass}
+                value={scoreForm.noInClass || ""}
                 onChange={(e) =>
                   setScoreForm({
                     ...scoreForm,
@@ -594,35 +838,19 @@ function AdminModal({
               />
             </FormField>
 
-            <div className="admin-score-calculation">
-              <div>
-                <span>Continuous assessment</span>
-                <strong>{scoreCA.toFixed(2)} / 40</strong>
-              </div>
-
-              <div>
-                <span>Total score</span>
-                <strong>{scoreTotal.toFixed(2)} / 100</strong>
-              </div>
-
-              {liveGrade && (
-                <>
-                  <div>
-                    <span>Calculated grade</span>
-                    <strong>{liveGrade.grade}</strong>
-                  </div>
-
-                  <div>
-                    <span>Subject remark</span>
-                    <strong>{liveGrade.remark}</strong>
-                  </div>
-                </>
-              )}
-            </div>
+            <p className="admin-classification-note">
+              {scoreType === "CA"
+                ? "Enter scores for whichever subjects you are ready to submit. You do not need to complete every subject or every CA component at once. Blank fields will be skipped."
+                : "Enter examination scores for whichever subjects are ready. Blank subjects will be skipped, and previously submitted CA scores will remain unchanged."}
+            </p>
 
             <ModalActions
               onCancel={() => setModal("")}
-              submitLabel="Save score"
+              submitLabel={
+                scoreType === "CA"
+                  ? "Submit CA scores"
+                  : "Submit Exam scores"
+              }
             />
           </form>
         )}

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import {
   LayoutDashboard,
@@ -20,7 +19,12 @@ import {
   School,
   ArrowUpRight,
   FileText,
+  Eye,
+  Download,
+  ArrowLeft,
 } from "lucide-react";
+
+import jsPDF from "jspdf";
 
 import api from "../../api/axios";
 import { logout } from "../../api/auth";
@@ -28,8 +32,6 @@ import { normalizeStudent } from "../../utils/normalizeStudent";
 import { normalizeSubject } from "../../utils/normalizeSubject";
 
 import {
-  calculateGrade,
-  getStudentSection,
   getAutomaticYearTutorComment,
   getAutomaticAdminComment,
 } from "../../utils/gradeUtils";
@@ -53,6 +55,7 @@ import Overview from "./Overview";
 
 import "./AdminDashboard.css";
 import schoolLogo from "../../assets/logo.jpeg";
+import schoolStamp from "../../assets/stamp.jpeg";
 
 // ======================================================
 // CONSTANTS
@@ -154,31 +157,93 @@ function normalizeGrade(grade = {}) {
 
   return {
     id: String(grade._id || grade.id || ""),
+
     student: getReferenceId(grade.student),
+
     studentName:
       student.name ||
       student.fullName ||
       `${student.firstName || ""} ${student.surname || ""}`.trim() ||
       "Name unavailable",
+
     admissionNumber: student.admissionNumber || "",
+
     className,
+
     department: requiresDepartment(className)
       ? student.department || ""
       : "",
+
     subject: getReferenceId(grade.subject),
-    subjectName: subject.subjectName || subject.name || "Unknown subject",
-    subjectCode: subject.subjectCode || subject.code || "",
+
+    subjectName:
+      subject.subjectName || subject.name || "Unknown subject",
+
+    subjectCode:
+      subject.subjectCode || subject.code || "",
+
     term: grade.term || "",
     academicYear: grade.academicYear || "",
-    test1: Number(grade.test1 || 0),
-    test2: Number(grade.test2 || 0),
-    test3: Number(grade.test3 || 0),
-    assignment: Number(grade.assignment || 0),
-    exam: Number(grade.exam || 0),
-    totalScore: Number(grade.totalScore || 0),
+
+    // Keep null when not submitted — do NOT coerce missing values to 0
+    test1:
+      grade.test1 === null || grade.test1 === undefined || grade.test1 === ""
+        ? null
+        : Number(grade.test1),
+    test2:
+      grade.test2 === null || grade.test2 === undefined || grade.test2 === ""
+        ? null
+        : Number(grade.test2),
+    notes:
+      grade.notes === null || grade.notes === undefined || grade.notes === ""
+        ? null
+        : Number(grade.notes),
+    oral:
+      grade.oral === null || grade.oral === undefined || grade.oral === ""
+        ? null
+        : Number(grade.oral),
+    test3:
+      grade.test3 === null || grade.test3 === undefined || grade.test3 === ""
+        ? null
+        : Number(grade.test3),
+    assignment:
+      grade.assignment === null ||
+      grade.assignment === undefined ||
+      grade.assignment === ""
+        ? null
+        : Number(grade.assignment),
+    exam: (() => {
+      const raw =
+        grade.exam ??
+        grade.examination ??
+        grade.examScore ??
+        grade.examMark ??
+        grade.examMarks ??
+        grade.examinationScore;
+      if (raw === null || raw === undefined || raw === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    ca: (() => {
+      const raw = grade.ca ?? grade.caTotal ?? grade.continuousAssessment;
+      if (raw === null || raw === undefined || raw === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    })(),
+
+    // Submission statuses (may be missing on older records)
+    caSubmitted: grade.caSubmitted === true,
+    examSubmitted: grade.examSubmitted === true,
+
+    totalScore:
+      grade.totalScore === null || grade.totalScore === undefined
+        ? null
+        : Number(grade.totalScore),
+
     grade: grade.grade || "",
     remark: grade.remark || "",
-    noInClass: grade.manualNoInClass ?? null,
+
+    noInClass: grade.manualNoInClass ?? grade.noInClass ?? null,
   };
 }
 
@@ -241,6 +306,20 @@ function AdminDashboard() {
   const [publishingTermId, setPublishingTermId] = useState(null);
 
   // ----------------------------------------------------
+  // ACADEMIC SESSION (global picker)
+  // ----------------------------------------------------
+
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState(
+    CURRENT_ACADEMIC_YEAR
+  );
+  const [availableSessions, setAvailableSessions] = useState([
+    "2025/2026",
+    "2026/2027",
+  ]);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [newSessionInput, setNewSessionInput] = useState("");
+
+  // ----------------------------------------------------
   // FILTER STATE
   // ----------------------------------------------------
 
@@ -259,6 +338,10 @@ function AdminDashboard() {
   const [resultAcademicYear, setResultAcademicYear] = useState(
     CURRENT_ACADEMIC_YEAR
   );
+
+  // Individual student result sheet (Student Results page)
+  const [selectedResultStudentId, setSelectedResultStudentId] =
+    useState(null);
 
   const [promotionClass, setPromotionClass] = useState("JSS1");
   const [promotionDepartment, setPromotionDepartment] = useState("Science");
@@ -293,17 +376,17 @@ function AdminDashboard() {
   });
 
   const [scoreForm, setScoreForm] = useState({
-    student: "",
-    subject: "",
-    test1: "",
-    test2: "",
-    test3: "",
-    assignment: "",
-    exam: "",
-    term: "First Term",
-    academicYear: CURRENT_ACADEMIC_YEAR,
-    noInClass: "",
-  });
+  student: "",
+  subject: "",
+  test1: "",
+  test2: "",
+  notes: "",
+  oral: "",
+  exam: "",
+  term: "First Term",
+  academicYear: CURRENT_ACADEMIC_YEAR,
+  noInClass: "",
+});
 
   // ======================================================
   // GENERAL ACTIONS
@@ -326,6 +409,52 @@ function AdminDashboard() {
     setActivePage(page);
     setSearch("");
     setSidebarOpen(false);
+    setSelectedResultStudentId(null);
+    setSessionMenuOpen(false);
+  };
+
+  const selectAcademicSession = (year) => {
+    const clean = String(year || "").trim();
+    if (!clean) return;
+
+    setSelectedAcademicYear(clean);
+    setResultAcademicYear(clean);
+    setScoreForm((current) => ({
+      ...current,
+      academicYear: clean,
+    }));
+    setTerms((current) =>
+      current.map((term) => ({
+        ...term,
+        session: clean,
+        isLocked: false,
+        isPublished: false,
+      }))
+    );
+    setSelectedResultStudentId(null);
+    setSessionMenuOpen(false);
+    showNotice(`Switched to ${clean} academic session.`);
+  };
+
+  const addAcademicSession = () => {
+    const clean = String(newSessionInput || "").trim();
+
+    if (!clean) {
+      showNotice("Enter a session like 2026/2027.");
+      return;
+    }
+
+    if (!/^\d{4}\/\d{4}$/.test(clean)) {
+      showNotice("Use the format YYYY/YYYY, e.g. 2026/2027.");
+      return;
+    }
+
+    setAvailableSessions((current) => {
+      if (current.includes(clean)) return current;
+      return [...current, clean].sort();
+    });
+    setNewSessionInput("");
+    selectAcademicSession(clean);
   };
 
   const handleLogout = () => {
@@ -368,7 +497,7 @@ function AdminDashboard() {
         api
           .get("/grades/admin/term-statuses", {
             params: {
-              academicYear: CURRENT_ACADEMIC_YEAR,
+              academicYear: selectedAcademicYear,
             },
           })
           .catch((error) => {
@@ -393,9 +522,60 @@ function AdminDashboard() {
         ? rawGrades
         : rawGrades?.grades || rawGrades?.data || [];
 
-      setStudents(studentList.map(normalizeStudent));
+      const normalizedStudents = studentList.map(normalizeStudent);
+      const studentById = new Map(
+        normalizedStudents.map((student) => [String(student.id), student])
+      );
+
+      const normalizedGrades = gradeList.map((raw) => {
+        const grade = normalizeGrade(raw);
+        const linked = studentById.get(String(grade.student));
+
+        // Enrich from the students list when grade.student was not populated
+        if (linked) {
+          return {
+            ...grade,
+            studentName: grade.studentName && grade.studentName !== "Name unavailable"
+              ? grade.studentName
+              : linked.name,
+            admissionNumber: grade.admissionNumber || linked.admissionNumber || "",
+            className: grade.className || linked.className || "",
+            department:
+              grade.department ||
+              (requiresDepartment(linked.className)
+                ? linked.department || ""
+                : ""),
+            gender: linked.gender || grade.gender || "",
+          };
+        }
+
+        return grade;
+      });
+
+      setStudents(normalizedStudents);
       setSubjects(subjectList.map(normalizeSubject));
-      setScores(gradeList.map(normalizeGrade));
+      setScores(normalizedGrades);
+
+      // Build session list from grades the admin has already worked on
+      const yearsFromGrades = [
+        ...new Set(
+          normalizedGrades
+            .map((grade) => String(grade.academicYear || "").trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      setAvailableSessions((current) => {
+        const merged = new Set([
+          ...current,
+          ...yearsFromGrades,
+          selectedAcademicYear,
+          CURRENT_ACADEMIC_YEAR,
+          "2025/2026",
+          "2026/2027",
+        ]);
+        return [...merged].filter(Boolean).sort();
+      });
 
       const savedStatuses = termStatusesRes.data?.statuses || [];
 
@@ -405,12 +585,9 @@ function AdminDashboard() {
             (status) => status.currentTerm === term.name
           );
 
-          if (term.session !== CURRENT_ACADEMIC_YEAR) {
-            return term;
-          }
-
           return {
             ...term,
+            session: selectedAcademicYear,
             isLocked: savedStatus?.isLocked ?? false,
             isPublished: savedStatus?.isPublished ?? false,
           };
@@ -429,11 +606,36 @@ function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [showNotice]);
+  }, [showNotice, selectedAcademicYear]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Keep forms and result filters in sync with the active session
+  useEffect(() => {
+    setResultAcademicYear(selectedAcademicYear);
+    setScoreForm((current) => ({
+      ...current,
+      academicYear: selectedAcademicYear,
+    }));
+  }, [selectedAcademicYear]);
+
+  // Close session menu when clicking outside
+  useEffect(() => {
+    if (!sessionMenuOpen) return undefined;
+
+    const handleOutside = () => setSessionMenuOpen(false);
+    // delay so the opening click does not immediately close it
+    const timer = window.setTimeout(() => {
+      document.addEventListener("click", handleOutside);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("click", handleOutside);
+    };
+  }, [sessionMenuOpen]);
 
   // ======================================================
   // SEARCH
@@ -711,7 +913,7 @@ function AdminDashboard() {
         className: enrollmentForm.className,
         department,
         term: enrollmentForm.term,
-        session: CURRENT_ACADEMIC_YEAR,
+        session: selectedAcademicYear,
       },
     ]);
 
@@ -741,7 +943,7 @@ function AdminDashboard() {
         ? student.department || ""
         : "",
       term: "First Term",
-      session: CURRENT_ACADEMIC_YEAR,
+      session: selectedAcademicYear,
     }));
 
     setEnrollments((current) => [...current, ...newOnes]);
@@ -749,178 +951,259 @@ function AdminDashboard() {
     showNotice(`${newOnes.length} students enrolled (local preview).`);
   };
 
-  // ======================================================
-  // SCORE ACTIONS
-  // ======================================================
+// ======================================================
+// SCORE ACTIONS
+// ======================================================
 
-  const addScore = async (event) => {
+const submitComponentScores = async (event, payload) => {
     event.preventDefault();
 
-    if (!scoreForm.student || !scoreForm.subject) {
-      showNotice("Please select a student and subject.");
+    const {
+      student: studentId,
+      term,
+      academicYear,
+      noInClass,
+      componentType,
+      scores: subjectScores,
+    } = payload;
+
+    if (!studentId) {
+      showNotice("Please select a student.");
       return;
     }
 
-    const fields = ["test1", "test2", "test3", "assignment", "exam"];
-
-    if (
-      fields.some(
-        (field) =>
-          scoreForm[field] === "" ||
-          !Number.isFinite(Number(scoreForm[field]))
-      )
-    ) {
-      showNotice("Please complete all score fields.");
+    if (!subjectScores?.length) {
+      showNotice("No subjects found for this student.");
       return;
     }
 
-    const test1 = Number(scoreForm.test1);
-    const test2 = Number(scoreForm.test2);
-    const test3 = Number(scoreForm.test3);
-    const assignment = Number(scoreForm.assignment);
-    const exam = Number(scoreForm.exam);
-
-    if (
-      [test1, test2, test3, assignment].some(
-        (value) => value < 0 || value > 10
-      )
-    ) {
-      showNotice("Each CA component must be between 0 and 10.");
+    if (!academicYear?.trim()) {
+      showNotice("Please enter the academic year.");
       return;
     }
 
-    if (exam < 0 || exam > 60) {
-      showNotice("Exam score must be between 0 and 60.");
+    if (!["CA", "Exam"].includes(componentType)) {
+      showNotice("Invalid score component selected.");
       return;
     }
 
     if (
-      scoreForm.noInClass !== "" &&
-      (!Number.isInteger(Number(scoreForm.noInClass)) ||
-        Number(scoreForm.noInClass) < 1)
+      noInClass !== "" &&
+      noInClass !== undefined &&
+      (!Number.isInteger(Number(noInClass)) || Number(noInClass) < 1)
     ) {
       showNotice("Class position must be a positive whole number.");
       return;
     }
 
     const selectedStudent = students.find(
-      (student) => student.id === scoreForm.student
+      (student) => String(student.id) === String(studentId)
     );
 
-    const selectedSubject = subjects.find(
-      (subject) => subject.id === scoreForm.subject
-    );
-
-    if (!selectedStudent || !selectedSubject) {
-      showNotice("Selected student or subject not found.");
+    if (!selectedStudent) {
+      showNotice("Selected student could not be found.");
       return;
     }
 
-    const subjectAssigned = selectedSubject.classAssignments.some(
-      (assignmentItem) => {
-        if (assignmentItem.className !== selectedStudent.className) {
-          return false;
-        }
-
-        if (requiresDepartment(selectedStudent.className)) {
-          return (
-            normalizeDepartment(assignmentItem.department) ===
-            normalizeDepartment(selectedStudent.department)
-          );
-        }
-
-        return true;
-      }
-    );
-
-    if (!subjectAssigned) {
-      showNotice(
-        "This subject is not assigned to the selected student's class and department."
+    for (const item of subjectScores) {
+      const selectedSubject = subjects.find(
+        (subject) => String(subject.id) === String(item.subject)
       );
-      return;
-    }
 
-    const academicYear = scoreForm.academicYear.trim();
+      if (!selectedSubject) {
+        showNotice("One of the selected subjects could not be found.");
+        return;
+      }
 
-    try {
-      const response = await api.post("/grades/submit-scores", {
-        admissionNumber: selectedStudent.admissionNumber,
-        subjectCode: selectedSubject.code,
-        test1,
-        test2,
-        test3,
-        assignment,
-        exam,
-        term: scoreForm.term,
-        academicYear,
-        noInClass:
-          scoreForm.noInClass === ""
-            ? undefined
-            : Number(scoreForm.noInClass),
-      });
+      const assignments = selectedSubject.classAssignments || [];
+      const isAssigned =
+        !assignments.length ||
+        assignments.some((assignment) => {
+          if (assignment.className !== selectedStudent.className) {
+            return false;
+          }
 
-      const savedGrade = response.data?.result;
+          if (requiresDepartment(selectedStudent.className)) {
+            return (
+              normalizeDepartment(assignment.department) ===
+              normalizeDepartment(selectedStudent.department)
+            );
+          }
 
-      if (savedGrade) {
-        const normalizedSavedGrade = normalizeGrade({
-          ...savedGrade,
-          student: {
-            _id: selectedStudent.id,
-            firstName: selectedStudent.firstName,
-            surname: selectedStudent.surname,
-            name: selectedStudent.name,
-            admissionNumber: selectedStudent.admissionNumber,
-            currentClass: selectedStudent.className,
-            department: selectedStudent.department,
-          },
-          subject: {
-            _id: selectedSubject.id,
-            subjectName: selectedSubject.name,
-            subjectCode: selectedSubject.code,
-          },
+          return true;
         });
 
-        setScores((current) => [
-          ...current.filter(
-            (score) =>
-              !(
-                score.student === normalizedSavedGrade.student &&
-                score.subject === normalizedSavedGrade.subject &&
-                score.term === normalizedSavedGrade.term &&
-                score.academicYear === normalizedSavedGrade.academicYear
-              )
-          ),
-          normalizedSavedGrade,
-        ]);
-      } else {
-        await loadData();
+      if (!isAssigned) {
+        showNotice(
+          `${selectedSubject.name} is not assigned to ${selectedStudent.className}. Assign the subject to this class under Subjects first.`
+        );
+        return;
       }
+
+      const limits =
+        componentType === "CA"
+          ? { test1: 10, test2: 20, notes: 5, oral: 5 }
+          : { exam: 60 };
+
+      for (const [field, maximum] of Object.entries(limits)) {
+        const value = item[field];
+
+        if (
+          value === "" ||
+          value === undefined ||
+          value === null ||
+          !Number.isFinite(Number(value))
+        ) {
+          showNotice(
+            `Please enter every ${componentType} score for ${selectedSubject.name}.`
+          );
+          return;
+        }
+
+        if (Number(value) < 0 || Number(value) > maximum) {
+          showNotice(
+            `${selectedSubject.name}: ${field} must be between 0 and ${maximum}.`
+          );
+          return;
+        }
+      }
+    }
+
+    const requestScores = subjectScores.map((item) => {
+      const selectedSubject = subjects.find(
+        (subject) => String(subject.id) === String(item.subject)
+      );
+
+      if (componentType === "CA") {
+        return {
+          subject: item.subject,
+          subjectCode: selectedSubject?.code || selectedSubject?.subjectCode,
+          test1: Number(item.test1),
+          test2: Number(item.test2),
+          notes: Number(item.notes),
+          oral: Number(item.oral),
+        };
+      }
+
+      return {
+        subject: item.subject,
+        subjectCode: selectedSubject?.code || selectedSubject?.subjectCode,
+        exam: Number(item.exam),
+      };
+    });
+
+    const endpoint =
+      componentType === "CA" ? "/grades/submit-ca" : "/grades/submit-exam";
+
+    const body = {
+      student: studentId,
+      admissionNumber: selectedStudent.admissionNumber,
+      term,
+      academicYear: academicYear.trim(),
+      noInClass:
+        noInClass === "" || noInClass === undefined
+          ? undefined
+          : Number(noInClass),
+      scores: requestScores,
+    };
+
+    try {
+      const token = localStorage.getItem("token");
+      const role = localStorage.getItem("role");
+
+      if (!token) {
+        showNotice("You are not logged in. Please log in as admin again.");
+        return;
+      }
+
+      if (role && role !== "admin" && role !== "teacher") {
+        showNotice(
+          `Score entry requires admin or teacher. Current role is "${role}".`
+        );
+        return;
+      }
+
+      const headers = { Authorization: `Bearer ${token}` };
+
+      let response;
+      try {
+        response = await api.post(endpoint, body, { headers });
+      } catch (firstError) {
+        if (firstError.response?.status === 404) {
+          const fallback =
+            componentType === "CA" ? "/grades/ca" : "/grades/exam";
+          response = await api.post(fallback, body, { headers });
+        } else {
+          throw firstError;
+        }
+      }
+
+      await loadData();
 
       setScoreForm({
         student: "",
         subject: "",
         test1: "",
         test2: "",
-        test3: "",
-        assignment: "",
+        notes: "",
+        oral: "",
         exam: "",
         term: "First Term",
-        academicYear: CURRENT_ACADEMIC_YEAR,
+        academicYear: selectedAcademicYear,
         noInClass: "",
       });
 
       setModal("");
-      showNotice("Score submitted successfully.");
-    } catch (err) {
+
       showNotice(
-        err.response?.data?.message || "Failed to submit score."
+        response?.data?.message ||
+          (componentType === "CA"
+            ? "All CA scores submitted successfully."
+            : "All examination scores submitted successfully.")
       );
+    } catch (error) {
+      console.error("Score submission error:", error);
+      console.error("Response:", error.response?.data);
+      console.error("Payload sent:", body);
+
+      const data = error.response?.data;
+      const detail =
+        data?.message ||
+        data?.error ||
+        (Array.isArray(data?.errors)
+          ? data.errors.map((e) => e.msg || e.message || String(e)).join("; ")
+          : null) ||
+        (typeof data === "string" ? data : null) ||
+        error.message ||
+        `Failed to submit ${componentType} scores.`;
+
+      showNotice(detail);
     }
   };
+
 
   // ======================================================
   // ACADEMIC TERM ACTIONS
   // ======================================================
+
+  const getAdminAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+
+    if (!token) {
+      throw new Error("You are not logged in. Please log in as admin again.");
+    }
+
+    if (role && role !== "admin") {
+      throw new Error(
+        `This action requires an admin account. Current role is "${role}". Log out and log in at /admin/login.`
+      );
+    }
+
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  };
 
   const toggleTerm = async (id) => {
     const term = terms.find((item) => item.id === id);
@@ -929,26 +1212,56 @@ function AdminDashboard() {
     const nextLockedState = !term.isLocked;
 
     try {
-      await api.patch("/grades/admin/toggle-lock", {
-        academicYear: term.session,
-        currentTerm: term.name,
-        isLocked: nextLockedState,
-      });
+      const headers = getAdminAuthHeaders();
+
+      // Prefer admin paths; fall back if backend uses alternate method/path
+      try {
+        await api.patch(
+          "/grades/admin/toggle-lock",
+          {
+            academicYear: term.session || selectedAcademicYear,
+            currentTerm: term.name,
+            isLocked: nextLockedState,
+          },
+          { headers }
+        );
+      } catch (firstError) {
+        const status = firstError.response?.status;
+        const msg = firstError.response?.data?.message || "";
+
+        // Fallback: POST same path (some servers only registered POST)
+        if (status === 404 || status === 405) {
+          await api.post(
+            "/grades/admin/toggle-lock",
+            {
+              academicYear: term.session || selectedAcademicYear,
+              currentTerm: term.name,
+              isLocked: nextLockedState,
+            },
+            { headers }
+          );
+        } else {
+          throw firstError;
+        }
+      }
 
       setTerms((current) =>
         current.map((item) =>
-          item.id === id
-            ? { ...item, isLocked: nextLockedState }
-            : item
+          item.id === id ? { ...item, isLocked: nextLockedState } : item
         )
       );
 
       showNotice(
-        `Term ${term.name} ${nextLockedState ? "locked" : "unlocked"} successfully.`
+        `Term ${term.name} ${
+          nextLockedState ? "locked" : "unlocked"
+        } successfully.`
       );
     } catch (err) {
+      console.error("toggleTerm error:", err.response?.data || err.message);
       showNotice(
-        err.response?.data?.message || "Failed to update term lock."
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to update term lock."
       );
     }
   };
@@ -961,15 +1274,35 @@ function AdminDashboard() {
 
     try {
       setPublishingTermId(id);
+      const headers = getAdminAuthHeaders();
 
-      const response = await api.patch(
-        "/grades/admin/publish-results",
-        {
-          academicYear: term.session,
-          currentTerm: term.name,
-          isPublished: nextPublishedState,
+      let response;
+      try {
+        response = await api.patch(
+          "/grades/admin/publish-results",
+          {
+            academicYear: term.session || selectedAcademicYear,
+            currentTerm: term.name,
+            isPublished: nextPublishedState,
+          },
+          { headers }
+        );
+      } catch (firstError) {
+        const status = firstError.response?.status;
+        if (status === 404 || status === 405) {
+          response = await api.post(
+            "/grades/admin/publish-results",
+            {
+              academicYear: term.session || selectedAcademicYear,
+              currentTerm: term.name,
+              isPublished: nextPublishedState,
+            },
+            { headers }
+          );
+        } else {
+          throw firstError;
         }
-      );
+      }
 
       const savedStatus = response.data?.status;
 
@@ -986,22 +1319,22 @@ function AdminDashboard() {
       );
 
       showNotice(
-        response.data?.message ||
-          `Results ${
-            nextPublishedState ? "published" : "unpublished"
-          } successfully.`
+        `Term ${term.name} ${
+          nextPublishedState ? "published" : "unpublished"
+        } successfully.`
       );
     } catch (err) {
-      console.error("Publish Results Error:", err);
-
+      console.error("publishTerm error:", err.response?.data || err.message);
       showNotice(
         err.response?.data?.message ||
-          "Failed to update result publication status."
+          err.message ||
+          "Failed to update publication status."
       );
     } finally {
       setPublishingTermId(null);
     }
   };
+
 
   // ======================================================
   // PROMOTION ACTIONS
@@ -1153,21 +1486,234 @@ function AdminDashboard() {
     )
   );
 
+
+
+  // Same completion rules as the student portal:
+  // real scores count even if caSubmitted/examSubmitted flags are missing.
+  /**
+   * Unified subject display — supports BOTH:
+   *  NEW: test1(10) + test2(20) + notes(5) + oral(5) = CA/40, exam/60
+   *  OLD: test1 + test2 + test3 + assignment = CA/40 (or stored `ca`)
+   *  Also accepts records that only have totalScore + grade/remark.
+   *  If exam is missing but total + CA exist, exam is derived as total - CA.
+   */
+  const getAdminSubjectDisplay = (score = {}) => {
+    const num = (value) =>
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      Number.isFinite(Number(value))
+        ? Number(value)
+        : null;
+
+    const test1 = num(score.test1);
+    const test2 = num(score.test2);
+    const notes = num(score.notes);
+    const oral = num(score.oral);
+    const test3 = num(score.test3);
+    const assignment = num(score.assignment);
+
+    // Exam may live under several field names on older records
+    const examValue =
+      num(score.exam) ??
+      num(score.examination) ??
+      num(score.examScore) ??
+      num(score.examMark) ??
+      num(score.examMarks) ??
+      num(score.examinationScore);
+
+    const caDirect = num(score.ca) ?? num(score.caTotal) ?? num(score.continuousAssessment);
+    const storedTotal =
+      num(score.totalScore) ??
+      num(score.total) ??
+      num(score.grandTotal) ??
+      num(score.overallTotal);
+
+    const newCAComplete = [test1, test2, notes, oral].every((v) => v !== null);
+    const legacyCAComplete = [test1, test2, test3, assignment].every(
+      (v) => v !== null
+    );
+    const hasNewParts = [notes, oral].some((v) => v !== null);
+    const hasLegacyParts = [test3, assignment].some((v) => v !== null);
+
+    let ca = null;
+
+    if (newCAComplete) {
+      ca = Number(test1) + Number(test2) + Number(notes) + Number(oral);
+    } else if (legacyCAComplete) {
+      ca =
+        Number(test1) + Number(test2) + Number(test3) + Number(assignment);
+    } else if (caDirect !== null) {
+      ca = caDirect;
+    } else if (score.caSubmitted === true || hasNewParts) {
+      if ([test1, test2, notes, oral].some((v) => v !== null)) {
+        ca =
+          Number(test1 || 0) +
+          Number(test2 || 0) +
+          Number(notes || 0) +
+          Number(oral || 0);
+      }
+    } else if (hasLegacyParts) {
+      ca =
+        Number(test1 || 0) +
+        Number(test2 || 0) +
+        Number(test3 || 0) +
+        Number(assignment || 0);
+    }
+
+    // Exam recovery
+    let exam = null;
+    if (examValue !== null) {
+      exam = examValue;
+    } else if (score.examSubmitted === true) {
+      exam = 0;
+    } else if (ca !== null && storedTotal !== null) {
+      // Older records often only stored CA pieces + grand total
+      const derived = Number(storedTotal) - Number(ca);
+      if (Number.isFinite(derived) && derived >= 0 && derived <= 60) {
+        exam = derived;
+      } else if (Number.isFinite(derived) && derived >= 0 && derived <= 100) {
+        exam = derived;
+      }
+    }
+
+    let total = null;
+    let complete = false;
+
+    if (ca !== null && exam !== null) {
+      total = storedTotal !== null ? storedTotal : ca + exam;
+      complete = true;
+    } else if (storedTotal !== null) {
+      total = storedTotal;
+      complete = true;
+      // Still try to present CA / Exam when one side is known
+      if (ca === null && exam !== null) {
+        const maybeCa = Number(storedTotal) - Number(exam);
+        if (Number.isFinite(maybeCa) && maybeCa >= 0 && maybeCa <= 40) {
+          ca = maybeCa;
+        }
+      }
+    }
+
+    let grade = complete ? score.grade || null : null;
+    let remark = complete ? score.remark || null : null;
+
+    if (complete && total !== null && (!grade || grade === "—")) {
+      const classHint = score.className || "";
+      if (/^(SS|SSS)/i.test(String(classHint))) {
+        if (total >= 75) grade = "A1";
+        else if (total >= 70) grade = "B2";
+        else if (total >= 65) grade = "B3";
+        else if (total >= 60) grade = "C4";
+        else if (total >= 55) grade = "C5";
+        else if (total >= 50) grade = "C6";
+        else if (total >= 45) grade = "D7";
+        else if (total >= 40) grade = "E8";
+        else grade = "F9";
+      } else {
+        if (total >= 70) grade = "A";
+        else if (total >= 60) grade = "B";
+        else if (total >= 50) grade = "C";
+        else if (total >= 40) grade = "P";
+        else grade = "F";
+      }
+    }
+
+    return {
+      ...score,
+      test1,
+      test2,
+      notes,
+      oral,
+      test3,
+      assignment,
+      ca,
+      caSubmitted: ca !== null,
+      exam,
+      examSubmitted: exam !== null,
+      total,
+      percentage: total !== null ? Number(Number(total).toFixed(2)) : null,
+      complete,
+      grade: complete ? grade || "—" : null,
+      remark: complete ? remark || "—" : null,
+    };
+  };
+
+  // Count active students in a class (and department when required)
+  const getClassSize = (className, department) => {
+    return students.filter((student) => {
+      if (String(student.className || "").trim().toUpperCase() !==
+          String(className || "").trim().toUpperCase()) {
+        return false;
+      }
+      if (String(student.status || "active").toLowerCase() === "withdrawn") {
+        return false;
+      }
+      if (requiresDepartment(className)) {
+        return (
+          normalizeDepartment(student.department) ===
+          normalizeDepartment(department)
+        );
+      }
+      return true;
+    }).length;
+  };
+
   // ======================================================
   // RESULT CALCULATIONS
   // ======================================================
 
-  const classResultScores = scores.filter(
-    (score) =>
-      matchesClassFilter(
+  const normalizeYear = (value) =>
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, "");
+
+  const normalizeTerm = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  // Students in the selected class (used to recover scores with missing className)
+  const studentsInResultClass = students.filter((student) =>
+    matchesClassFilter(
+      student.className,
+      student.department,
+      resultClass,
+      resultDepartment
+    )
+  );
+  const resultClassStudentIds = new Set(
+    studentsInResultClass.map((student) => String(student.id))
+  );
+  const resultClassAdmissionNumbers = new Set(
+    studentsInResultClass
+      .map((student) => String(student.admissionNumber || "").trim())
+      .filter(Boolean)
+  );
+
+  const classResultScores = scores.filter((score) => {
+    const yearOk =
+      normalizeYear(score.academicYear) === normalizeYear(resultAcademicYear);
+    const termOk =
+      normalizeTerm(score.term) === normalizeTerm(resultTerm);
+
+    if (!yearOk || !termOk) return false;
+
+    // Prefer class on the grade; fall back to matching the student roster
+    if (score.className) {
+      return matchesClassFilter(
         score.className,
         score.department,
         resultClass,
         resultDepartment
-      ) &&
-      score.term === resultTerm &&
-      score.academicYear === resultAcademicYear
-  );
+      );
+    }
+
+    return (
+      resultClassStudentIds.has(String(score.student)) ||
+      resultClassAdmissionNumbers.has(String(score.admissionNumber || "").trim())
+    );
+  });
 
   const visibleResultScores = filtered(classResultScores, [
     "studentName",
@@ -1182,7 +1728,8 @@ function AdminDashboard() {
 
       if (!groups[key]) {
         groups[key] = {
-          studentId: score.admissionNumber || score.student,
+          studentId: score.student,
+          admissionNumber: score.admissionNumber || score.student,
           studentName: score.studentName,
           className: score.className,
           department: score.department || "",
@@ -1196,51 +1743,534 @@ function AdminDashboard() {
       return groups;
     }, {})
   ).map((result) => {
-    const total = result.scores.reduce(
-      (sum, score) => sum + Number(score.totalScore || 0),
+    const displayScores = result.scores.map(getAdminSubjectDisplay);
+
+    // Only fully completed subjects count toward average.
+    // A genuine total of 0 still counts.
+    const completedScores = displayScores.filter((score) => score.complete);
+
+    const total = completedScores.reduce(
+      (sum, score) => sum + Number(score.total || 0),
       0
     );
 
-    const subjectCount = result.scores.length;
-    const average = subjectCount ? total / subjectCount : 0;
+    const completedSubjectCount = completedScores.length;
+    const average = completedSubjectCount
+      ? total / completedSubjectCount
+      : null;
 
     return {
       ...result,
+      scores: displayScores,
       total,
-      subjectCount,
+      completedSubjectCount,
+      subjectCount: displayScores.length,
       average,
-      yearTutorComment: getAutomaticYearTutorComment(average),
-      adminComment: getAutomaticAdminComment(average),
+      yearTutorComment:
+        average === null
+          ? "Awaiting completed subject results."
+          : getAutomaticYearTutorComment(average),
+      adminComment:
+        average === null
+          ? "Results are not yet complete."
+          : getAutomaticAdminComment(average),
     };
   });
+
+  // Students in the filtered class — list view (even if no scores yet)
+  const resultListStudents = filtered(
+    students.filter((student) =>
+      matchesClassFilter(
+        student.className,
+        student.department,
+        resultClass,
+        resultDepartment
+      )
+    ),
+    ["name", "admissionNumber", "className", "department"]
+  ).map((student) => {
+    const existing = groupedResults.find(
+      (r) =>
+        String(r.studentId) === String(student.id) ||
+        String(r.admissionNumber) === String(student.admissionNumber)
+    );
+
+    return {
+      id: student.id,
+      name: student.name,
+      admissionNumber: student.admissionNumber,
+      className: student.className,
+      department: student.department || "",
+      gender: student.gender || "",
+      classSize: getClassSize(student.className, student.department),
+      result: existing || null,
+    };
+  });
+
+  const selectedResult = selectedResultStudentId
+    ? resultListStudents.find(
+        (s) => String(s.id) === String(selectedResultStudentId)
+      ) || null
+    : null;
+
+  const downloadStudentResultPDF = async (entry) => {
+    if (!entry) return;
+
+    const result = entry.result;
+    const scores = result?.scores || [];
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 12;
+    const PDF_PURPLE = [88, 28, 135];
+    const PDF_LIGHT_PURPLE = [245, 237, 252];
+
+    const mappedSubjects = scores.map((raw) => {
+      const score = getAdminSubjectDisplay(raw);
+      return {
+        name: score.subjectName || score.name || "Subject",
+        ca: score.ca,
+        caSubmitted: score.ca !== null,
+        exam: score.exam,
+        examSubmitted: score.exam !== null,
+        total: score.total,
+        percentage: score.percentage,
+        grade: score.grade,
+        remark: score.remark,
+        complete: score.complete,
+      };
+    });
+
+    const completed = mappedSubjects.filter((s) => s.complete);
+    const totalScore = completed.reduce((sum, s) => sum + Number(s.total || 0), 0);
+    const terminalAverage =
+      completed.length > 0
+        ? Number(
+            (
+              completed.reduce((sum, s) => sum + Number(s.percentage || 0), 0) /
+              completed.length
+            ).toFixed(2)
+          )
+        : null;
+
+    const yearTutorComment =
+      terminalAverage === null
+        ? "Awaiting completed subject results."
+        : getAutomaticYearTutorComment(terminalAverage);
+    const adminComment =
+      terminalAverage === null
+        ? "Results are not yet complete."
+        : getAutomaticAdminComment(terminalAverage);
+
+    const classLabel = entry.department
+      ? `${entry.className} — ${entry.department}`
+      : entry.className;
+
+    const noInClass =
+      entry.classSize != null && entry.classSize > 0
+        ? String(entry.classSize)
+        : "—";
+
+    const loadImageForPDF = async (imageUrl) => {
+      if (!imageUrl) return null;
+      try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const image = new Image();
+          await new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = reject;
+            image.src = objectUrl;
+          });
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return null;
+          ctx.drawImage(image, 0, 0);
+          return canvas.toDataURL("image/png");
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch (e) {
+        console.warn("PDF image load failed", e);
+        return null;
+      }
+    };
+
+    const [logoData, stampData] = await Promise.all([
+      loadImageForPDF(schoolLogo),
+      loadImageForPDF(schoolStamp),
+    ]);
+
+    if (logoData) {
+      try {
+        pdf.addImage(logoData, "PNG", margin, 8, 18, 18);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(15);
+    pdf.text("O'LAK TRIUMPH SCHOOL", pageWidth / 2, 16, { align: "center" });
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(50, 50, 50);
+    pdf.text(
+      "12 Oseni Shotonwa Street, Ebute, Ikorodu, Lagos",
+      pageWidth / 2,
+      19,
+      { align: "center" }
+    );
+
+    pdf.setFontSize(9);
+    pdf.text("REPORT SHEET FOR SECONDARY SCHOOL", pageWidth / 2, 23, {
+      align: "center",
+    });
+
+    let y = 29;
+
+    pdf.setDrawColor(...PDF_PURPLE);
+    pdf.setLineWidth(0.4);
+    pdf.rect(margin, y, pageWidth - margin * 2, 21);
+
+    pdf.setFontSize(7.5);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(40, 40, 40);
+
+    pdf.text(`SESSION: ${resultAcademicYear}`, margin + 2, y + 5);
+    pdf.text(
+      `TERM: ${String(resultTerm || "").toUpperCase()}`,
+      margin + 76,
+      y + 5
+    );
+    pdf.text(`CLASS: ${classLabel}`, margin + 132, y + 5);
+
+    pdf.text(
+      `STUDENT NAME: ${String(entry.name || "").toUpperCase()}`,
+      margin + 2,
+      y + 11
+    );
+    pdf.text(
+      `SEX: ${String(entry.gender || "—").toUpperCase()}`,
+      margin + 132,
+      y + 11
+    );
+
+    pdf.text(
+      `STUDENT NO: ${entry.admissionNumber || "—"}`,
+      margin + 2,
+      y + 17
+    );
+    pdf.text(`NO. IN CLASS: ${noInClass}`, margin + 132, y + 17);
+
+    y = 57;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("PERFORMANCE IN SUBJECTS", pageWidth / 2, y, {
+      align: "center",
+    });
+
+    y = 61;
+
+    const tableWidth = pageWidth - margin * 2;
+    const columns = [
+      { label: "SUBJECT", x: margin + 2 },
+      { label: "CA / 40", x: margin + 73 },
+      { label: "EXAM / 60", x: margin + 94 },
+      { label: "TOTAL", x: margin + 119 },
+      { label: "GRADE", x: margin + 141 },
+      { label: "REMARK", x: margin + 158 },
+    ];
+
+    pdf.setFillColor(...PDF_PURPLE);
+    pdf.rect(margin, y, tableWidth, 8, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(255, 255, 255);
+    columns.forEach((column) => pdf.text(column.label, column.x, y + 5));
+    y += 8;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7);
+    pdf.setTextColor(40, 40, 40);
+
+    mappedSubjects.forEach((subject, index) => {
+      if (y > pageHeight - 45) {
+        pdf.addPage();
+        y = 20;
+      }
+
+      if (index % 2 === 0) {
+        pdf.setFillColor(...PDF_LIGHT_PURPLE);
+        pdf.rect(margin, y, tableWidth, 8, "F");
+      }
+
+      pdf.text(
+        String(subject.name).toUpperCase().slice(0, 30),
+        columns[0].x,
+        y + 5
+      );
+      pdf.text(
+        subject.caSubmitted ? `${subject.ca}/40` : "Pending",
+        columns[1].x,
+        y + 5
+      );
+      pdf.text(
+        subject.examSubmitted ? `${subject.exam}/60` : "Pending",
+        columns[2].x,
+        y + 5
+      );
+      pdf.text(
+        subject.total !== null ? String(subject.total) : "Pending",
+        columns[3].x,
+        y + 5
+      );
+      pdf.text(subject.grade || "—", columns[4].x, y + 5);
+      pdf.text(
+        String(subject.remark || "—").slice(0, 15),
+        columns[5].x,
+        y + 5
+      );
+      y += 8;
+    });
+
+    y += 4;
+    if (y > pageHeight - 65) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    pdf.setDrawColor(...PDF_PURPLE);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 7;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(40, 40, 40);
+
+    pdf.text("TOTAL OF COMPLETED SUBJECTS:", margin + 2, y);
+    pdf.text(totalScore.toFixed(2), margin + 78, y);
+    y += 6;
+    pdf.text("SUBJECTS OFFERED:", margin + 2, y);
+    pdf.text(String(mappedSubjects.length), margin + 78, y);
+    y += 6;
+    pdf.text("COMPLETED SUBJECTS:", margin + 2, y);
+    pdf.text(String(completed.length), margin + 78, y);
+    y += 6;
+    pdf.text("PENDING SUBJECTS:", margin + 2, y);
+    pdf.text(String(mappedSubjects.length - completed.length), margin + 78, y);
+    y += 6;
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("AVERAGE OF COMPLETED SUBJECTS:", margin + 2, y);
+    pdf.text(
+      terminalAverage !== null ? `${terminalAverage.toFixed(2)}%` : "Pending",
+      margin + 78,
+      y
+    );
+    y += 11;
+
+    if (y > pageHeight - 65) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("RATING", pageWidth / 2, y, { align: "center" });
+    y += 4;
+
+    const ratingWidth = pageWidth - margin * 2;
+    const cellWidth = ratingWidth / 6;
+    const ratingHeight = 14;
+    const ranges = [
+      "70-100",
+      "60-69.99",
+      "50-59.99",
+      "45-49.99",
+      "40-44.99",
+      "0-39.99",
+    ];
+    const keys = ["A", "B", "C", "D", "E", "F"];
+
+    pdf.setDrawColor(...PDF_PURPLE);
+    pdf.setLineWidth(0.3);
+    pdf.setFillColor(...PDF_LIGHT_PURPLE);
+    pdf.rect(margin, y, ratingWidth, ratingHeight / 2, "FD");
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(margin, y + ratingHeight / 2, ratingWidth, ratingHeight / 2, "FD");
+
+    for (let index = 0; index <= 6; index++) {
+      pdf.line(
+        margin + index * cellWidth,
+        y,
+        margin + index * cellWidth,
+        y + ratingHeight
+      );
+    }
+    pdf.line(
+      margin,
+      y + ratingHeight / 2,
+      margin + ratingWidth,
+      y + ratingHeight / 2
+    );
+
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(...PDF_PURPLE);
+    ranges.forEach((label, index) => {
+      pdf.text(label, margin + index * cellWidth + cellWidth / 2, y + 4.5, {
+        align: "center",
+      });
+    });
+    pdf.setFontSize(9);
+    pdf.setTextColor(40, 40, 40);
+    keys.forEach((label, index) => {
+      pdf.text(
+        label,
+        margin + index * cellWidth + cellWidth / 2,
+        y + ratingHeight - 2.5,
+        { align: "center" }
+      );
+    });
+    y += ratingHeight + 9;
+
+    if (y > pageHeight - 55) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("Teacher's Comment:", margin + 2, y);
+    y += 4;
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(50, 50, 50);
+    const tutorLines = pdf.splitTextToSize(
+      yearTutorComment,
+      pageWidth - margin * 2
+    );
+    pdf.text(tutorLines, margin + 2, y);
+    y += tutorLines.length * 3.8 + 5;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("Principal/Headmaster's Comment:", margin + 2, y);
+    y += 4;
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(50, 50, 50);
+    const adminLines = pdf.splitTextToSize(
+      adminComment,
+      pageWidth - margin * 2
+    );
+    pdf.text(adminLines, margin + 2, y);
+    y += adminLines.length * 3.8 + 8;
+
+    const stampWidth = 28;
+    let stampHeight = 18;
+    if (stampData) {
+      try {
+        const properties = pdf.getImageProperties(stampData);
+        stampHeight = Math.min(
+          stampWidth / (properties.width / properties.height),
+          22
+        );
+      } catch {
+        stampHeight = 18;
+      }
+    }
+
+    if (y + stampHeight + 16 > pageHeight - 10) {
+      pdf.addPage();
+      y = 20;
+    } else {
+      y += 5;
+    }
+
+    const signatureWidth = 55;
+    const signatureX = pageWidth - margin - signatureWidth;
+    const signatureY = y + (stampData ? stampHeight + 2 : 0) + 4;
+    const stampX = signatureX + (signatureWidth - stampWidth) / 2;
+    const stampY = signatureY - stampHeight - 1;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...PDF_PURPLE);
+    pdf.text("Head Teacher", signatureX + signatureWidth / 2, stampY - 3, {
+      align: "center",
+    });
+
+    if (stampData) {
+      try {
+        pdf.addImage(
+          stampData,
+          "PNG",
+          stampX,
+          stampY,
+          stampWidth,
+          stampHeight
+        );
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    pdf.setDrawColor(...PDF_PURPLE);
+    pdf.setLineWidth(0.5);
+    pdf.line(signatureX, signatureY, signatureX + signatureWidth, signatureY);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text(
+      "Signature / Stamp",
+      signatureX + signatureWidth / 2,
+      signatureY + 4,
+      { align: "center" }
+    );
+
+    const safeName = String(entry.admissionNumber || entry.name || "result")
+      .replace(/[^\w.-]+/g, "_");
+    const safeTerm = String(resultTerm).replace(/\s+/g, "-").toLowerCase();
+    pdf.save(`${safeName}-${safeTerm}.pdf`);
+  };
 
   // ======================================================
   // LIVE SCORE CALCULATION
   // ======================================================
 
-  const scoreCA =
-    Number(scoreForm.test1 || 0) +
-    Number(scoreForm.test2 || 0) +
-    Number(scoreForm.test3 || 0) +
-    Number(scoreForm.assignment || 0);
+//  const scoreCA =
+//    Number(scoreForm.test1 || 0) +
+//    Number(scoreForm.test2 || 0) +
+//   Number(scoreForm.test3 || 0) +
+//    Number(scoreForm.assignment || 0);
 
-  const scoreExam = Number(scoreForm.exam || 0);
-  const scoreTotal = scoreCA + scoreExam;
+//  const scoreExam = Number(scoreForm.exam || 0);
+//  const scoreTotal = scoreCA + scoreExam;
 
-  const selectedScoreStudent = students.find(
-    (student) => student.id === scoreForm.student
-  );
+//  const selectedScoreStudent = students.find(
+//    (student) => student.id === scoreForm.student
+//  );
 
-  const liveGrade = selectedScoreStudent
-    ? calculateGrade(
-        getStudentSection(selectedScoreStudent.className),
-        scoreForm.test1 || 0,
-        scoreForm.test2 || 0,
-        scoreForm.test3 || 0,
-        scoreForm.assignment || 0,
-        scoreForm.exam || 0
-      )
-    : null;
+//  const liveGrade = selectedScoreStudent
+//    ? calculateGrade(
+//        getStudentSection(selectedScoreStudent.className),
+//        scoreForm.test1 || 0,
+//        scoreForm.test2 || 0,
+//        scoreForm.test3 || 0,
+//        scoreForm.assignment || 0,
+//        scoreForm.exam || 0
+//      )
+//    : null;
 
   // ======================================================
   // DASHBOARD DATA
@@ -1409,10 +2439,102 @@ function AdminDashboard() {
           </div>
 
           <div className="admin-topbar-right">
-            <span className="admin-session-label">
-              <span />
-              {CURRENT_ACADEMIC_YEAR} Academic Session
-            </span>
+            <div
+              className="admin-session-picker"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="admin-session-trigger"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSessionMenuOpen((open) => !open);
+                }}
+                aria-haspopup="listbox"
+                aria-expanded={sessionMenuOpen}
+              >
+                <span className="admin-session-dot" />
+                <span className="admin-session-text">
+                  {selectedAcademicYear} Academic Session
+                </span>
+                <ChevronRight
+                  size={14}
+                  className={`admin-session-chevron ${
+                    sessionMenuOpen ? "open" : ""
+                  }`}
+                />
+              </button>
+
+              {sessionMenuOpen ? (
+                <div
+                  className="admin-session-menu"
+                  role="listbox"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="admin-session-menu-title">
+                    Academic sessions
+                  </p>
+                  <p className="admin-session-menu-hint">
+                    Sessions you have already worked on appear here. Pick
+                    one to view or edit that year&apos;s results.
+                  </p>
+
+                  <div className="admin-session-list">
+                    {(availableSessions.length
+                      ? availableSessions
+                      : [selectedAcademicYear]
+                    ).map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        role="option"
+                        className={`admin-session-option ${
+                          year === selectedAcademicYear ? "active" : ""
+                        }`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          selectAcademicSession(year);
+                        }}
+                      >
+                        <span>{year}</span>
+                        {year === selectedAcademicYear ? (
+                          <CheckCircle2 size={15} />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="admin-session-add">
+                    <input
+                      type="text"
+                      value={newSessionInput}
+                      onChange={(e) => setNewSessionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addAcademicSession();
+                        }
+                      }}
+                      placeholder="e.g. 2027/2028"
+                      aria-label="New academic session"
+                    />
+                    <button
+                      type="button"
+                      className="admin-primary-button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        addAcademicSession();
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
             <button
               className="admin-notification"
@@ -1452,7 +2574,7 @@ function AdminDashboard() {
 
             <div className="admin-date-chip">
               <CalendarDays size={16} />
-              {CURRENT_ACADEMIC_YEAR} Session
+              {selectedAcademicYear} Session
             </div>
           </div>
 
@@ -1755,171 +2877,431 @@ function AdminDashboard() {
 
           {activePage === "Student Results" && (
             <section className="admin-panel">
-              <PanelHeading
-                title="Student terminal results"
-                subtitle="Subject grades, overall averages and automatically generated comments."
-                search={search}
-                setSearch={setSearch}
-              />
-
-              <ClassificationFilter
-                selectedClass={resultClass}
-                setSelectedClass={(value) => {
-                  setResultClass(value);
-                  setResultDepartment("Science");
-                }}
-                selectedDepartment={resultDepartment}
-                setSelectedDepartment={setResultDepartment}
-              />
-
-              <div className="admin-form-two admin-results-filters">
-                <FormField label="Academic term">
-                  <select
-                    value={resultTerm}
-                    onChange={(e) => setResultTerm(e.target.value)}
-                  >
-                    <option>First Term</option>
-                    <option>Second Term</option>
-                    <option>Third Term</option>
-                  </select>
-                </FormField>
-
-                <FormField label="Academic year">
-                  <input
-                    value={resultAcademicYear}
-                    onChange={(e) => setResultAcademicYear(e.target.value)}
-                    placeholder="2025/2026"
+              {!selectedResult ? (
+                <>
+                  <PanelHeading
+                    title="Student results"
+                    subtitle="Select a class, then open one student to view their full result sheet."
+                    search={search}
+                    setSearch={setSearch}
                   />
-                </FormField>
-              </div>
 
-              <p className="admin-classification-note">
-                Showing results for <strong>{resultClass}</strong>
-                {requiresDepartment(resultClass) && (
-                  <>
-                    {" "}
-                    — <strong>{resultDepartment}</strong> Department
-                  </>
-                )}
-                {" · "}
-                {resultTerm}, {resultAcademicYear}
-              </p>
+                  <ClassificationFilter
+                    selectedClass={resultClass}
+                    setSelectedClass={(value) => {
+                      setResultClass(value);
+                      setResultDepartment("Science");
+                      setSelectedResultStudentId(null);
+                    }}
+                    selectedDepartment={resultDepartment}
+                    setSelectedDepartment={(value) => {
+                      setResultDepartment(value);
+                      setSelectedResultStudentId(null);
+                    }}
+                  />
 
-              {!groupedResults.length ? (
-                <EmptyState text="No student results found for this selection." />
+                  <div className="admin-form-two admin-results-filters">
+                    <FormField label="Academic term">
+                      <select
+                        value={resultTerm}
+                        onChange={(e) => {
+                          setResultTerm(e.target.value);
+                          setSelectedResultStudentId(null);
+                        }}
+                      >
+                        <option>First Term</option>
+                        <option>Second Term</option>
+                        <option>Third Term</option>
+                      </select>
+                    </FormField>
+
+                    <FormField label="Academic year">
+                      <input
+                        value={resultAcademicYear}
+                        onChange={(e) => {
+                          setResultAcademicYear(e.target.value);
+                          setSelectedResultStudentId(null);
+                        }}
+                        placeholder="2026/2027"
+                      />
+                    </FormField>
+                  </div>
+
+                  <p className="admin-classification-note">
+                    Showing students in <strong>{resultClass}</strong>
+                    {requiresDepartment(resultClass) && (
+                      <>
+                        {" "}
+                        — <strong>{resultDepartment}</strong> Department
+                      </>
+                    )}
+                    {" · "}
+                    {resultTerm}, {resultAcademicYear}
+                  </p>
+
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Admission No.</th>
+                          <th>Student name</th>
+                          <th>Class</th>
+                          <th>Subjects recorded</th>
+                          <th>Average</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultListStudents.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="admin-id">
+                              {entry.admissionNumber || "—"}
+                            </td>
+                            <td>
+                              <strong>{entry.name}</strong>
+                            </td>
+                            <td>
+                              {entry.className}
+                              {entry.department
+                                ? ` · ${entry.department}`
+                                : ""}
+                            </td>
+                            <td>
+                              {entry.result
+                                ? entry.result.subjectCount
+                                : 0}
+                            </td>
+                            <td>
+                              {entry.result?.average == null
+                                ? "Pending"
+                                : `${entry.result.average.toFixed(2)}%`}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="admin-table-action"
+                                onClick={() =>
+                                  setSelectedResultStudentId(entry.id)
+                                }
+                              >
+                                <Eye size={14} />
+                                View Results
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {!resultListStudents.length && (
+                    <EmptyState text="No students found for this class and department." />
+                  )}
+                </>
               ) : (
-                <div className="admin-overall-results">
-                  {groupedResults.map((result) => (
-                    <article
-                      className="admin-panel admin-student-result-card"
-                      key={`${result.studentId}-${result.term}-${result.academicYear}`}
+                <>
+                  <div className="admin-result-toolbar">
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      onClick={() => setSelectedResultStudentId(null)}
                     >
-                      <div className="admin-panel-heading">
-                        <div>
-                          <h3>{result.studentName}</h3>
-                          <p>
-                            {result.studentId} · {result.className}
-                            {result.department
-                              ? ` · ${result.department}`
-                              : ""}
-                          </p>
-                          <p>
-                            {result.term} · {result.academicYear}
-                          </p>
-                        </div>
+                      <ArrowLeft size={14} />
+                      Back to student list
+                    </button>
 
-                        <div className="admin-result-average">
-                          <span>Terminal average</span>
-                          <strong>{result.average.toFixed(2)}%</strong>
-                        </div>
-                      </div>
+                    <button
+                      type="button"
+                      className="admin-primary-button"
+                      onClick={() =>
+                        downloadStudentResultPDF(selectedResult)
+                      }
+                    >
+                      <Download size={14} />
+                      Download PDF
+                    </button>
+                  </div>
 
-                      <div className="admin-table-wrap">
-                        <table className="admin-table">
-                          <thead>
-                            <tr>
-                              <th>Subject</th>
-                              <th>Test 1</th>
-                              <th>Test 2</th>
-                              <th>Test 3</th>
-                              <th>Assignment</th>
-                              <th>CA / 40</th>
-                              <th>Exam / 60</th>
-                              <th>Total / 100</th>
-                              <th>Grade</th>
-                              <th>Remark</th>
-                            </tr>
-                          </thead>
+                  <div className="admin-result-page-heading">
+                    <div>
+                      <p className="admin-eyebrow">ACADEMIC REPORT</p>
+                      <h2>
+                        {resultTerm.replace(" Term", "")} Term Result
+                      </h2>
+                      <p>{resultAcademicYear}</p>
+                    </div>
+                  </div>
 
-                          <tbody>
-                            {result.scores.map((score) => {
-                              const ca =
-                                Number(score.test1 || 0) +
-                                Number(score.test2 || 0) +
-                                Number(score.test3 || 0) +
-                                Number(score.assignment || 0);
+                  <section className="admin-result-student-summary">
+                    <div>
+                      <span>Student</span>
+                      <strong>{selectedResult.name}</strong>
+                    </div>
+                    <div>
+                      <span>Admission number</span>
+                      <strong>
+                        {selectedResult.admissionNumber || "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Class</span>
+                      <strong>
+                        {selectedResult.className}
+                        {selectedResult.department
+                          ? ` — ${selectedResult.department}`
+                          : ""}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>No. in Class</span>
+                      <strong>
+                        {selectedResult.classSize != null &&
+                        selectedResult.classSize > 0
+                          ? selectedResult.classSize
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Term</span>
+                      <strong>{resultTerm}</strong>
+                    </div>
+                    <div>
+                      <span>Session</span>
+                      <strong>{resultAcademicYear}</strong>
+                    </div>
+                    <div>
+                      <span>Sex</span>
+                      <strong>
+                        {(selectedResult.gender || "—").toUpperCase()}
+                      </strong>
+                    </div>
+                  </section>
+
+                  <section className="admin-result-table-panel">
+                    <div className="admin-result-section-heading">
+                      <p className="admin-eyebrow">PERFORMANCE IN SUBJECTS</p>
+                      <h3>{resultTerm}</h3>
+                    </div>
+
+                    <div className="admin-table-wrap">
+                      <table className="admin-table admin-student-result-table">
+                        <thead>
+                          <tr>
+                            <th>Subjects</th>
+                            <th>CA / 40</th>
+                            <th>Exam / 60</th>
+                            <th>Total / 100</th>
+                            <th>Percentage</th>
+                            <th>Grade</th>
+                            <th>Remark</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedResult.result?.scores || []).map(
+                            (rawScore) => {
+                              const score = getAdminSubjectDisplay(rawScore);
 
                               return (
                                 <tr key={score.id}>
                                   <td>
-                                    <strong>{score.subjectName}</strong>
-                                  </td>
-                                  <td>{score.test1}</td>
-                                  <td>{score.test2}</td>
-                                  <td>{score.test3}</td>
-                                  <td>{score.assignment}</td>
-                                  <td>{ca}</td>
-                                  <td>{score.exam}</td>
-                                  <td>
-                                    <strong>{score.totalScore}</strong>
+                                    <strong>
+                                      {String(
+                                        score.subjectName || score.name || ""
+                                      ).toUpperCase()}
+                                    </strong>
                                   </td>
                                   <td>
-                                    <strong>{score.grade}</strong>
+                                    {score.ca !== null
+                                      ? `${score.ca}/40`
+                                      : "Yet to be uploaded"}
                                   </td>
-                                  <td>{score.remark}</td>
+                                  <td>
+                                    {score.exam !== null
+                                      ? `${score.exam}/60`
+                                      : "Yet to be uploaded"}
+                                  </td>
+                                  <td>
+                                    {score.total !== null
+                                      ? `${score.total}/100`
+                                      : "Pending"}
+                                  </td>
+                                  <td>
+                                    {score.percentage !== null
+                                      ? `${score.percentage.toFixed(2)}%`
+                                      : "Pending"}
+                                  </td>
+                                  <td>
+                                    {score.complete
+                                      ? score.grade || "—"
+                                      : "—"}
+                                  </td>
+                                  <td>
+                                    {score.complete
+                                      ? score.remark || "—"
+                                      : "—"}
+                                  </td>
+                                  <td>
+                                    <div style={{ display: "grid", gap: 4 }}>
+                                      <small>
+                                        CA:{" "}
+                                        {score.ca !== null
+                                          ? "Submitted"
+                                          : "Pending"}
+                                      </small>
+                                      <small>
+                                        Exam:{" "}
+                                        {score.exam !== null
+                                          ? "Submitted"
+                                          : "Pending"}
+                                      </small>
+                                    </div>
+                                  </td>
                                 </tr>
                               );
-                            })}
-                          </tbody>
-                        </table>
+                            }
+                          )}
+
+                          {(() => {
+                            const scores = (
+                              selectedResult.result?.scores || []
+                            ).map(getAdminSubjectDisplay);
+                            const completed = scores.filter((s) => s.complete);
+                            const totalSum = completed.reduce(
+                              (sum, s) => sum + Number(s.total || 0),
+                              0
+                            );
+                            const average =
+                              completed.length > 0
+                                ? totalSum / completed.length
+                                : null;
+
+                            return (
+                              <>
+                                <tr className="admin-result-summary-row">
+                                  <td colSpan={2}>
+                                    <strong>
+                                      TOTAL OF COMPLETED SUBJECTS
+                                    </strong>
+                                  </td>
+                                  <td colSpan={2}>
+                                    <strong>{totalSum.toFixed(2)}</strong>
+                                  </td>
+                                  <td colSpan={4} />
+                                </tr>
+                                <tr className="admin-result-summary-row">
+                                  <td colSpan={2}>
+                                    <strong>SUBJECTS OFFERED</strong>
+                                  </td>
+                                  <td>
+                                    <strong>{scores.length}</strong>
+                                  </td>
+                                  <td colSpan={5} />
+                                </tr>
+                                <tr className="admin-result-summary-row">
+                                  <td colSpan={2}>
+                                    <strong>COMPLETED SUBJECTS</strong>
+                                  </td>
+                                  <td>
+                                    <strong>{completed.length}</strong>
+                                  </td>
+                                  <td colSpan={5} />
+                                </tr>
+                                <tr className="admin-result-summary-row">
+                                  <td colSpan={2}>
+                                    <strong>PENDING SUBJECTS</strong>
+                                  </td>
+                                  <td>
+                                    <strong>
+                                      {scores.length - completed.length}
+                                    </strong>
+                                  </td>
+                                  <td colSpan={5} />
+                                </tr>
+                                <tr className="admin-result-summary-row admin-result-summary-aggregate">
+                                  <td colSpan={3}>
+                                    <strong>
+                                      AVERAGE OF COMPLETED SUBJECTS
+                                    </strong>
+                                  </td>
+                                  <td>
+                                    <strong>
+                                      {average == null
+                                        ? "Pending"
+                                        : `${average.toFixed(2)}%`}
+                                    </strong>
+                                  </td>
+                                  <td colSpan={4} />
+                                </tr>
+                              </>
+                            );
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {!selectedResult.result?.scores?.length && (
+                      <EmptyState text="No subject scores recorded for this student in the selected term." />
+                    )}
+
+                    <div className="admin-result-rating-wrap">
+                      <p className="admin-result-rating-title">RATING</p>
+                      <table className="admin-table admin-result-rating-table">
+                        <thead>
+                          <tr>
+                            <th>70 – 100</th>
+                            <th>60 – 69.99</th>
+                            <th>50 – 59.99</th>
+                            <th>45 – 49.99</th>
+                            <th>40 – 44.99</th>
+                            <th>0 – 39.99</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>A</td>
+                            <td>B</td>
+                            <td>C</td>
+                            <td>D</td>
+                            <td>E</td>
+                            <td>F</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <p className="admin-result-rating-key">KEY</p>
+                    </div>
+
+                    <div className="admin-result-comments-section">
+                      <div className="admin-result-comment-block">
+                        <strong>Teacher&apos;s Comment</strong>
+                        <p>
+                          {selectedResult.result?.yearTutorComment ||
+                            "Awaiting completed subject results."}
+                        </p>
                       </div>
-
-                      <div
-                        className="admin-result-comments"
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 14,
-                          width: "100%",
-                        }}
-                      >
-                        <div style={{ width: "100%" }}>
-                          <div className="admin-result-comment-heading">
-                            <School size={18} />
-                            <strong>Admin's Comment</strong>
-                          </div>
-                          <p>{result.adminComment}</p>
-                        </div>
-
-                        <div style={{ width: "100%" }}>
-                          <div className="admin-result-comment-heading">
-                            <GraduationCap size={18} />
-                            <strong>Year Tutor's Comment</strong>
-                          </div>
-                          <p>{result.yearTutorComment}</p>
-                        </div>
-
-                        <div style={{ width: "100%" }}>
-                          <div className="admin-result-comment-heading">
-                            <FileText size={18} />
-                            <strong>Subjects Recorded</strong>
-                          </div>
-                          <p>{result.subjectCount}</p>
-                        </div>
+                      <div className="admin-result-comment-block">
+                        <strong>
+                          Principal / Headmaster&apos;s Comment
+                        </strong>
+                        <p>
+                          {selectedResult.result?.adminComment ||
+                            "Results are not yet complete."}
+                        </p>
                       </div>
-                    </article>
-                  ))}
-                </div>
+                    </div>
+
+                    <div className="admin-report-signature">
+                      <img
+                        src={schoolStamp}
+                        alt="School stamp"
+                        className="admin-report-stamp"
+                      />
+                      <div className="admin-report-signature-line" />
+                      <strong>Head Teacher</strong>
+                      <span>Signature / Stamp</span>
+                    </div>
+                  </section>
+                </>
               )}
             </section>
           )}
@@ -2097,6 +3479,8 @@ function AdminDashboard() {
                 .
               </p>
 
+              
+
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
@@ -2109,7 +3493,6 @@ function AdminDashboard() {
                       <th>Action</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {filtered(promotionStudents, [
                       "id",
@@ -2134,11 +3517,12 @@ function AdminDashboard() {
                                 : "open"
                             }`}
                           >
-                            {student.status}
+                            {student.status || "Active"}
                           </span>
                         </td>
                         <td>
                           <button
+                            type="button"
                             className="admin-table-action"
                             onClick={() => promoteStudent(student.id)}
                           >
@@ -2428,7 +3812,6 @@ function AdminDashboard() {
       )}
 
       {/* OTHER MODALS */}
-
       <AdminModal
         modal={modal === "student" ? "" : modal}
         setModal={setModal}
@@ -2444,7 +3827,7 @@ function AdminDashboard() {
         addEnrollment={addEnrollment}
         scoreForm={scoreForm}
         setScoreForm={setScoreForm}
-        addScore={addScore}
+        submitComponentScores={submitComponentScores}
         departments={departments}
         secondaryClasses={secondaryClasses}
         enrollmentClassOptions={enrollmentClassOptions}
@@ -2454,9 +3837,6 @@ function AdminDashboard() {
         scoreDepartment={scoreDepartment}
         scoreStudents={scoreStudents}
         scoreSubjects={scoreSubjects}
-        scoreCA={scoreCA}
-        scoreTotal={scoreTotal}
-        liveGrade={liveGrade}
       />
     </div>
   );
