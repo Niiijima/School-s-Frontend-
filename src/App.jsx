@@ -40,10 +40,10 @@ const INITIAL_EVENTS = [
   {
     id: 1,
     day: "15",
-    month: "OCT",
-    title: "Inter-House Sports Competition",
-    location: "School Main Field",
-    time: "9:00 AM",
+    month: "DEC",
+    title: "In House Christmas Carol",
+    location: "School Hall",
+    time: "1:00 PM",
     description:
       "Join us for an exciting day of athletic track and field events as our houses compete for the championship trophy."
   },
