@@ -70,16 +70,16 @@ const INITIAL_EVENTS = [
 ];
 
 const SLIDES = [
-  { id: 1, src: slide1, alt: "O'lak Triumph School Activity 1" },
-  { id: 2, src: slide2, alt: "O'lak Triumph School Activity 2" },
-  { id: 3, src: slide3, alt: "O'lak Triumph School Activity 3" },
-  { id: 4, src: slide4, alt: "O'lak Triumph School Activity 4" },
-  { id: 5, src: slide5, alt: "O'lak Triumph School Activity 5" },
-  { id: 6, src: slide6, alt: "O'lak Triumph School Activity 6" },
-  { id: 7, src: slide7, alt: "O'lak Triumph School Activity 7" },
-  { id: 8, src: slide8, alt: "O'lak Triumph School Activity 8" },
-  { id: 10, src: slide10, alt: "O'lak Triumph School Activity 10" },
-  { id: 11, src: slide11, alt: "O'lak Triumph School Activity 11" }
+  { id: 1, src: slide1, alt: "O'lak Triumph Schools Activity 1" },
+  { id: 2, src: slide2, alt: "O'lak Triumph Schools Activity 2" },
+  { id: 3, src: slide3, alt: "O'lak Triumph Schools Activity 3" },
+  { id: 4, src: slide4, alt: "O'lak Triumph Schools Activity 4" },
+  { id: 5, src: slide5, alt: "O'lak Triumph Schools Activity 5" },
+  { id: 6, src: slide6, alt: "O'lak Triumph Schools Activity 6" },
+  { id: 7, src: slide7, alt: "O'lak Triumph Schools Activity 7" },
+  { id: 8, src: slide8, alt: "O'lak Triumph Schools Activity 8" },
+  { id: 10, src: slide10, alt: "O'lak Triumph Schools Activity 10" },
+  { id: 11, src: slide11, alt: "O'lak Triumph Schools Activity 11" }
 ];
 
 // ====================== HOMEPAGE ======================
@@ -248,7 +248,7 @@ function HomePage() {
               alt="O'lak Triumph School Logo"
               className="header-logo-img"
             />
-            <span>O'lak Triumph School</span>
+            <span>O'lak Triumph Schools</span>
           </a>
 
           <nav className={`main-nav ${isNavOpen ? "open" : ""}`}>
@@ -297,7 +297,7 @@ function HomePage() {
 
           <div className="container hero-content">
             <h1 className="hero-title">
-              <span>Welcome to O'lak Triumph School</span>
+              <span>Welcome to O'lak Triumph Schools</span>
             </h1>
 
             <p className="hero-motto">Committed to Excellence in Education</p>
@@ -349,7 +349,7 @@ function HomePage() {
             <div className="founder-image-wrapper">
               <img
                 src={founderPhoto}
-                alt="Founder of O'lak Triumph School"
+                alt="Founder of O'lak Triumph Schools"
               />
             </div>
 
@@ -386,7 +386,7 @@ function HomePage() {
                   color: "#334155"
                 }}
               >
-                Founded in 2003, <strong>O'lak Triumph School</strong> was
+                Founded in 2003, <strong>O'lak Triumph Schools</strong> was
                 established with a vision to build a holistic educational
                 institution that fosters both academic distinction and moral
                 leadership.
